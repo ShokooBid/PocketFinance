@@ -9,7 +9,15 @@ const query = {
   currency: "USD",
   recentLimit: 5
 } as const;
-function service(groups: { incomeMinor: bigint; expensesMinor: bigint }[]) {
+function service(
+  groups: {
+    incomeMinor: bigint;
+    expensesMinor: bigint;
+    categoryId?: string | null;
+    rootId?: string | null;
+    rootName?: string;
+  }[]
+) {
   // Only the database boundary is replaced: exercise real total/overflow logic.
   const tx = {
     $queryRaw: vi.fn().mockResolvedValue(
@@ -28,6 +36,68 @@ function service(groups: { incomeMinor: bigint; expensesMinor: bigint }[]) {
   return createDashboardService(db as unknown as PrismaClient);
 }
 describe("dashboard exact monetary boundary", () => {
+  it("allows an explicit all-dates filter while preserving paired bounded dates and range limits", () => {
+    expect(summaryQuery.parse({ allDates: "true", currency: "USD" })).toEqual({
+      allDates: "true",
+      currency: "USD",
+      recentLimit: 5
+    });
+    for (const input of [
+      { currency: "USD" },
+      { allDates: "false", currency: "USD" },
+      { allDates: "true", ...query },
+      { allDates: "true", currency: "USD", from: "2026-11-01" }
+    ])
+      expect(summaryQuery.safeParse(input).success).toBe(false);
+  });
+  it("includes uncategorized amounts and reconciles root totals with direct parent and child postings once", async () => {
+    const parent = "00000000-0000-4000-8000-000000000001";
+    const result = await service([
+      {
+        categoryId: parent,
+        rootId: parent,
+        rootName: "Food",
+        incomeMinor: 100n,
+        expensesMinor: 200n
+      },
+      {
+        categoryId: "00000000-0000-4000-8000-000000000002",
+        rootId: parent,
+        rootName: "Food",
+        incomeMinor: 0n,
+        expensesMinor: 800n
+      },
+      {
+        categoryId: null,
+        rootId: null,
+        rootName: "Uncategorized",
+        incomeMinor: 300n,
+        expensesMinor: 50n
+      }
+    ]).summary("owner", query);
+    expect(result).toMatchObject({
+      incomeMinor: 400,
+      expensesMinor: 1050,
+      netMinor: -650
+    });
+    expect(result.rootCategoryBreakdown).toEqual([
+      {
+        categoryId: null,
+        categoryName: "Uncategorized",
+        incomeMinor: 300,
+        expensesMinor: 50,
+        netMinor: 250
+      },
+      {
+        categoryId: parent,
+        categoryName: "Food",
+        incomeMinor: 100,
+        expensesMinor: 1000,
+        netMinor: -900
+      }
+    ]);
+    expect(summarySchema.safeParse(result).success).toBe(true);
+  });
   it("accepts the largest safe JSON integer and a negative net", async () => {
     const result = await service([
       { incomeMinor: 0n, expensesMinor: BigInt(Number.MAX_SAFE_INTEGER) }

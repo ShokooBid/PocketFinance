@@ -53,11 +53,13 @@ Expo mobile app  ── HTTPS/JSON ──>  Fastify REST API  ──>  PostgreSQ
 - The API publishes OpenAPI documentation generated from the implemented route
   schemas. Hand-written documentation must not be the sole contract source.
 - Collection endpoints use explicit, documented pagination and filter parameters;
-  they must bound page sizes and date ranges.
+  they must bound page sizes and validate date ranges. The aggregate-only report
+  endpoint also supports explicit `allDates=true`; it returns totals and bounded
+  recents, never an unbounded transaction list.
 - `GET /health` is public and contains no sensitive configuration or dependency
   details.
 - Required accounts and merchant-free transactions use the canonical `/v1`
-  contract. Transfers remain future work. See the current
+  contract. Same-currency transfers use dedicated aggregate endpoints. See the current
   [deployment contract](mobile-redesign/finance-contracts.md#migration-and-deployment).
 
 ## Request validation and error responses
@@ -160,6 +162,36 @@ Expo mobile app  ── HTTPS/JSON ──>  Fastify REST API  ──>  PostgreSQ
   paging and persistence. Extend existing source adapters/session providers rather
   than replace authentication or introduce a generic form/AI framework.
 
+## Overview Reports
+
+Issue [#117](https://github.com/ShokooBid/PocketFinance/issues/117) replaces the
+Overview route's old monthly dashboard with Reports. The route mounts report
+state for each visit, initializing the full month from the device's local
+calendar. Refreshes and category expansion keep that applied selection.
+
+- `reports-screen.tsx` renders Income/Expenses cards and composes the same
+  `RangeDateField` used by History. The calendar owns draft selection; only Apply
+  or Clear changes the applied filter.
+- `use-report.ts` coordinates reads and finance-change subscriptions. Request
+  sequence and source/selection checks prevent late responses from replacing the
+  current report or exposing a previous session's data.
+- `report-period.ts` owns local-month initialization, date-only comparison ranges,
+  percentage changes, and favorable/adverse descriptions.
+- `report-data.ts` combines current/comparison aggregates with category metadata.
+  It sums exact category postings, including direct-parent entries, without adding
+  the API's separate root totals again.
+- `dashboard-data.ts` adapts authenticated aggregate queries and isolated demo
+  snapshots. Live reporting never fetches transaction pages. The older
+  `dashboard.tsx` is no longer mounted by the Overview route.
+
+Current and comparison periods use separate aggregate requests, each with its own
+repeatable-read database snapshot. They are not one cross-request snapshot.
+If the comparison read fails, current totals remain available with dash changes;
+if the current report cannot load, the screen offers a safe error and retry.
+All-date reports have no comparison. See the
+[report contract](mobile-redesign/finance-contracts.md#overview-reports-and-comparisons)
+and [verification record](mobile-redesign/verification.md#issue-117-overview-reports-2026-11-17).
+
 ## Authentication and sessions
 
 - The MVP supports both first-party email/password and Google sign-in. This
@@ -181,7 +213,8 @@ Expo mobile app  ── HTTPS/JSON ──>  Fastify REST API  ──>  PostgreSQ
   that do not reveal whether an account exists.
 - The backend implements password/Google proofs, explicit linking, server-checked
   access, refresh rotation and revocation. Google challenges are persisted and
-  consumed once. Mobile secure restoration remains Issue #11.
+  consumed once. Mobile restoration uses the session controller and secure-store
+  adapter; native provider/device acceptance is tracked separately from mocked tests.
 - See [Authentication plan](authentication-plan.md) for session lifetimes,
   provider setup, linking rules, implementation order, and release requirements.
 

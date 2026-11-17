@@ -147,6 +147,34 @@ describe("protected dashboard summary", () => {
       recentTransactions: []
     });
   });
+  it("returns all-date aggregates after Clear and keeps owner and currency filters", async () => {
+    const user = await owner();
+    await create(user, { date: "2024-05-01", amountMinor: 200 });
+    await create(user, { date: "2026-11-30", amountMinor: 800 });
+    await create(user, {
+      date: "2026-11-15",
+      direction: "income",
+      amountMinor: 2000
+    });
+    await create(bob, { date: "2024-05-01", amountMinor: 99999 });
+    const all = await request("allDates=true&currency=USD", user.token);
+    expect(all.statusCode).toBe(200);
+    expect(summarySchema.parse(all.json())).toMatchObject({
+      from: null,
+      to: null,
+      incomeMinor: 2000,
+      expensesMinor: 1000,
+      netMinor: 1000
+    });
+    const bounded = await request(
+      "from=2026-11-01&to=2026-11-30&currency=USD",
+      user.token
+    );
+    expect(bounded.json()).toMatchObject({ expensesMinor: 800 });
+    const other = await request("allDates=true&currency=EUR", user.token);
+    expect(other.statusCode).toBe(200);
+    expect(other.json()).toMatchObject({ incomeMinor: 0, expensesMinor: 0 });
+  });
   it("sums a single category exactly beyond a 32-bit integer", async () => {
     await create(alice, { date: "2026-09-01", amountMinor: 2147483647 });
     await create(alice, { date: "2026-09-01", amountMinor: 2147483647 });
@@ -268,6 +296,52 @@ describe("protected dashboard summary", () => {
         ids.slice(0, count)
       );
     }
+  });
+  it("returns exact and root views for direct parent/child postings without double counting", async () => {
+    const user = await owner();
+    const parent = await db.category.create({
+      data: { userId: user.id, name: "Report parent" }
+    });
+    const child = await db.category.create({
+      data: { userId: user.id, name: "Report child", parentId: parent.id }
+    });
+    await create(user, {
+      categoryId: parent.id,
+      date: "2026-06-01",
+      amountMinor: 200
+    });
+    await create(user, {
+      categoryId: child.id,
+      date: "2026-06-30",
+      amountMinor: 800
+    });
+    await create(user, {
+      categoryId: child.id,
+      date: "2026-06-15",
+      direction: "income",
+      amountMinor: 500
+    });
+    const response = await request(
+      "from=2026-06-01&to=2026-06-30&currency=USD",
+      user.token
+    );
+    expect(response.statusCode).toBe(200);
+    const result = summarySchema.parse(response.json());
+    expect(result).toMatchObject({
+      incomeMinor: 500,
+      expensesMinor: 1000,
+      netMinor: -500
+    });
+    expect(result.categoryBreakdown).toHaveLength(2);
+    expect(result.rootCategoryBreakdown).toEqual([
+      {
+        categoryId: parent.id,
+        categoryName: parent.name,
+        incomeMinor: 500,
+        expensesMinor: 1000,
+        netMinor: -500
+      }
+    ]);
   });
   it("uses accounting dates across leap/DST dates and the supported year bounds", async () => {
     const calendarOwner = await owner();

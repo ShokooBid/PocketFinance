@@ -88,6 +88,9 @@ export function validDateFilter({ from, to }: TransactionFilter): boolean {
   );
 }
 export interface TransactionSource {
+  // In-memory simulations can expose a bounded snapshot for local reports.
+  // Authenticated reports use the aggregate API, never transaction pagination.
+  demoSnapshot?(filter: TransactionFilter): Promise<Transaction[]>;
   get(id: string): Promise<Transaction>;
   subscribe(listener: (change: TransactionChange) => void): () => void;
   list(filter: TransactionFilter, after?: string): Promise<TransactionPage>;
@@ -228,6 +231,16 @@ export function createDemoTransactionSource(
     return account.currency;
   }
   return observeTransactions({
+    async demoSnapshot(filter) {
+      return (await Promise.all(rows.map(serialize)))
+        .filter(
+          (row) =>
+            row.currency === filter.currency &&
+            (!filter.from || row.date >= filter.from) &&
+            (!filter.to || row.date <= filter.to)
+        )
+        .sort((a, b) => `${b.date}_${b.id}`.localeCompare(`${a.date}_${a.id}`));
+    },
     async get(id) {
       const row = rows.find((row) => row.id === id);
       if (!row) throw new ClientFailure("unavailable");

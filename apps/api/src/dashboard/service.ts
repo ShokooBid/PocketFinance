@@ -4,9 +4,9 @@ import { serializeTransaction } from "../transactions/service.js";
 import type { SummaryQuery } from "./contracts.js";
 
 type CategoryTotals = {
-  categoryId: string;
+  categoryId: string | null;
   categoryName: string;
-  rootId: string;
+  rootId: string | null;
   rootName: string;
   incomeMinor: bigint;
   expensesMinor: bigint;
@@ -33,22 +33,25 @@ function totals(income: bigint, expenses: bigint) {
 export function createDashboardService(db: PrismaClient) {
   return {
     async summary(userId: string, query: SummaryQuery) {
+      const from = query.from ?? null;
+      const to = query.to ?? null;
       return db.$transaction(
         async (tx) => {
           // Tagged parameters remain data, never executable SQL. SUM(integer)
           // returns bigint; preserve exactness until the checked JSON boundary.
           const groups = await tx.$queryRaw<CategoryTotals[]>`
-            SELECT t."categoryId", c.name AS "categoryName",
-              COALESCE(p.id, c.id) AS "rootId", COALESCE(p.name, c.name) AS "rootName",
+            SELECT t."categoryId", COALESCE(c.name, 'Uncategorized') AS "categoryName",
+              COALESCE(p.id, c.id) AS "rootId", COALESCE(p.name, c.name, 'Uncategorized') AS "rootName",
               COALESCE(SUM(t."amountMinor") FILTER (WHERE t.direction = 'income'), 0)::bigint AS "incomeMinor",
               COALESCE(SUM(t."amountMinor") FILTER (WHERE t.direction = 'expense'), 0)::bigint AS "expensesMinor"
             FROM "Transaction" t
             JOIN "Account" a ON a.id = t."accountId" AND a."userId" = t."userId"
-            JOIN "Category" c ON c.id = t."categoryId" AND (c."userId" IS NULL OR c."userId" = t."userId")
+            LEFT JOIN "Category" c ON c.id = t."categoryId" AND (c."userId" IS NULL OR c."userId" = t."userId")
             LEFT JOIN "Category" p ON p.id = c."parentId" AND (p."userId" IS NULL OR p."userId" = t."userId")
             WHERE t."userId" = ${userId}::uuid
               AND t."transferId" IS NULL
-              AND t.date >= ${query.from}::date AND t.date <= ${query.to}::date
+              AND (${from}::date IS NULL OR t.date >= ${from}::date)
+              AND (${to}::date IS NULL OR t.date <= ${to}::date)
               AND a.currency = ${query.currency}
             GROUP BY t."categoryId", c.name, p.id, p.name, c.id
             ORDER BY t."categoryId" ASC
@@ -57,8 +60,13 @@ export function createDashboardService(db: PrismaClient) {
             where: {
               userId,
               transferId: null,
+              // Uncategorized postings belong in totals. The legacy recent
+              // transaction DTO requires a category; keep that contract intact.
+              categoryId: { not: null },
               account: { currency: query.currency },
-              date: { gte: new Date(query.from), lte: new Date(query.to) }
+              ...(from && to
+                ? { date: { gte: new Date(from), lte: new Date(to) } }
+                : {})
             },
             orderBy: [{ date: "desc" }, { id: "desc" }],
             take: query.recentLimit,
@@ -66,7 +74,7 @@ export function createDashboardService(db: PrismaClient) {
           });
           let income = 0n;
           let expenses = 0n;
-          const roots = new Map<string, CategoryTotals>();
+          const roots = new Map<string | null, CategoryTotals>();
           const categoryBreakdown = groups.map((group) => {
             income += group.incomeMinor;
             expenses += group.expensesMinor;
@@ -89,15 +97,17 @@ export function createDashboardService(db: PrismaClient) {
             };
           });
           return {
-            from: query.from,
-            to: query.to,
+            from,
+            to,
             currency: query.currency,
             ...totals(income, expenses),
             categoryBreakdown,
             // Roots include direct postings and children once. These are a
             // second view of the same totals, never added to the exact groups.
             rootCategoryBreakdown: [...roots.values()]
-              .sort((a, b) => a.categoryId.localeCompare(b.categoryId))
+              .sort((a, b) =>
+                (a.categoryId ?? "").localeCompare(b.categoryId ?? "")
+              )
               .map((root) => ({
                 categoryId: root.categoryId,
                 categoryName: root.categoryName,

@@ -18,7 +18,7 @@ home in #72; the dashboard is now Overview behind the same setup gate.
 | ----------------------- | ------------------------------------------------------------------------------------- |
 | Add `/`                 | Income/expense/transfer draft; primary recording experience.                          |
 | History `/transactions` | Logical records and account/date/category filters.                                    |
-| Overview `/overview`    | Period totals, category rollups and recent records.                                   |
+| Overview `/overview`    | Income/Expenses reports, category expansion and period comparisons.                   |
 | Settings `/settings`    | Currency, account management, category management, existing privacy/session controls. |
 
 Keep `/transactions/[id]`, `/categories`, `/import`, `/privacy` and `/settings`
@@ -167,17 +167,20 @@ account balances, History and Overview.
 
 ## History and Overview
 
-History uses a compact month selector with adjacent arrows, a single From/To/Apply
-date bar, and account/type/category filter chips. Date headers place the full-day
-count and net beside the date. Rows place the category icon and account/category
-detail on the left and the signed amount on the right. Clear and Refresh stay
-available as secondary actions without dominating the first screenful.
+History and Reports use the same single date range selector (`RangeDateField`),
+showing the applied range or All dates. It opens one shared calendar with compact
+Clear and Apply buttons inside the calendar surface. There are no separate From/To
+controls, month-navigation toolbar, or external Apply button. Date headers in
+History place the full-day count and net beside the date. Rows place the category
+icon and account/category detail on the left and the signed amount on the right.
+History's Clear filters and Refresh remain secondary actions.
 
-Issue #75 implements the live History screen with a current-month default,
-previous/next/selected month controls and inclusive custom From/To calendar dates.
+History initializes to the current month and supports inclusive calendar ranges.
 Account, type (income/expense/transfer) and exact/subtree category filters combine
-with AND. Apply commits the draft selection; Clear removes every filter and starts
-a new pagination chain. A category filter excludes uncategorized transfers.
+with AND. Calendar edits remain a draft; Apply commits the range or a single day.
+Calendar Clear removes only the date filter and closes the picker; dismissing it
+discards edits. History's separate Clear filters action removes every filter and
+starts a new pagination chain. A category filter excludes transfers.
 
 Group compact rows by the stored transaction date, newest first. Headers show
 the full filtered-day count and net per currency even when that date spans pages.
@@ -199,11 +202,31 @@ The bottom destination reads Edit until successful update or confirmed cancellat
 then it reads Add again. A failed or uncertain write keeps the draft and retry
 identity in the editor. Demo data remains isolated in memory.
 
-Overview shows period income, expenses, net and root/child category breakdowns.
-Transfers affect account balances, never income/expenses/net. Opening balances
-also do not count as income. Do not add unlike currencies. Archived records stay
-readable and include their state; historical labels follow the existing current-
-name behavior rather than inventing immutable snapshots.
+Overview opens Reports by default. Charts is disabled and visibly marked
+Unavailable, with an accessible explanation. Each Overview visit initializes and
+loads the full current local month, including its final day. Ordinary renders,
+category expansion and automatic finance refreshes retain the applied dates.
+
+Income and Expenses have separate lavender card headings, totals and percentage
+changes. Expenses display negative amounts; comparison calculations use positive
+spending magnitudes. Expandable category rows show existing icons and indented
+subcategories, including direct-parent entries. Empty sections show a short message
+inside their card. Actual uncategorized amounts remain explicit when present.
+The screen has no currency banner, manual Refresh control, auxiliary footer links,
+or comparison explanation footer. The Add / History / Overview bar stays outside
+the scrolling screen, with Overview selected.
+
+Full-month comparisons use the preceding calendar month. Other bounded ranges use
+the preceding equal inclusive interval; all dates has no comparison. Changes show
+signs and accessible descriptions: income increases and expense decreases are
+green, adverse changes red, and unavailable/zero baselines a dash. Error/retry and
+loading states never present fabricated zero totals. Confirmed finance changes
+refresh reports automatically; late requests cannot overwrite newer selections.
+
+Transfers and opening balances affect account balances, not report income or
+expenses. Do not add unlike currencies. Archived category metadata stays readable;
+labels use current names rather than immutable historical snapshots. See the
+[report contract](finance-contracts.md#overview-reports-and-comparisons).
 
 ## States and recovery
 

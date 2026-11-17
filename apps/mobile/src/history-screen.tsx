@@ -15,7 +15,7 @@ import { theme } from "./theme";
 import { CategoryIcon } from "./category-icon";
 import { categoryPath } from "./category-hierarchy";
 import { CategoryPicker } from "./finance-picker";
-import { RangeDatePicker } from "./date-picker";
+import { RangeDateField } from "./date-picker";
 import {
   historyDateLabel,
   historyKey,
@@ -66,26 +66,15 @@ export function HistoryScreen(
         importantForAccessibility={modalOpen ? "no-hide-descendants" : "auto"}
         style={styles.section}
       >
-        <HistoryPill
-          label={`Date range: ${filter.from && filter.to ? `${filter.from} – ${filter.to}` : "All dates"}`}
-          text={
-            filter.from && filter.to
-              ? `${filter.from} – ${filter.to}  ⌄`
-              : "All dates  ⌄"
-          }
+        <RangeDateField
+          from={filter.from}
+          to={filter.to}
           expanded={picker === "range"}
           disabled={disabled}
-          onPress={() => open("range")}
+          onToggle={() => open("range")}
+          onChange={state.updateFilters}
+          onClose={() => setPicker(null)}
         />
-        {picker === "range" && (
-          <RangeDatePicker
-            from={filter.from}
-            to={filter.to}
-            disabled={disabled}
-            onChange={state.updateFilters}
-            onClose={() => setPicker(null)}
-          />
-        )}
         <View
           style={[styles.filterBar, fontScale > 1.3 && styles.filterBarWrap]}
         >

@@ -7,14 +7,19 @@ import {
 
 export const summaryQuery = z
   .strictObject({
-    from: calendarDate,
-    to: calendarDate,
+    from: calendarDate.optional(),
+    to: calendarDate.optional(),
+    allDates: z.literal("true").optional(),
     currency: currencySchema,
     recentLimit: z.coerce.number().int().min(1).max(20).default(5)
   })
-  .refine(
-    ({ from, to }) =>
-      from <= to && Date.parse(to) - Date.parse(from) <= 366 * 86400000
+  .refine(({ from, to, allDates }) =>
+    allDates === "true"
+      ? from === undefined && to === undefined
+      : !!from &&
+        !!to &&
+        from <= to &&
+        Date.parse(to) - Date.parse(from) <= 366 * 86400000
   );
 
 const totals = z.object({
@@ -27,18 +32,18 @@ const totals = z.object({
     .max(Number.MAX_SAFE_INTEGER)
 });
 export const summarySchema = totals.extend({
-  from: calendarDate,
-  to: calendarDate,
+  from: calendarDate.nullable(),
+  to: calendarDate.nullable(),
   currency: currencySchema,
   categoryBreakdown: z.array(
     totals.extend({
-      categoryId: z.uuid(),
+      categoryId: z.uuid().nullable(),
       categoryName: z.string(),
-      rootId: z.uuid().optional()
+      rootId: z.uuid().nullable().optional()
     })
   ),
   rootCategoryBreakdown: z.array(
-    totals.extend({ categoryId: z.uuid(), categoryName: z.string() })
+    totals.extend({ categoryId: z.uuid().nullable(), categoryName: z.string() })
   ),
   recentTransactions: z.array(transactionSchema).max(20)
 });

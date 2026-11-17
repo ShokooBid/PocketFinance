@@ -17,6 +17,15 @@ Protected assets include transaction data, categories, financial accounts/openin
 balances, permanent currency choices, statement drafts/provenance, account identity,
 password hashes, sessions, refresh tokens, database credentials and operational logs.
 
+Reporting in #117 keeps aggregate reads scoped to the authenticated owner and one
+account currency. `allDates=true` intentionally removes only the date constraint;
+it does not enable cross-user/currency access or an unbounded transaction response.
+Recents stay capped, transfers stay excluded, and unsafe totals fail explicitly.
+Each summary response uses one database snapshot; comparison requests have separate
+snapshots. Client request guards reject stale selection/source results. The
+[verification record](mobile-redesign/verification.md#issue-117-overview-reports-2026-11-17)
+documents the executed ownership/currency tests and outstanding device checks.
+
 ## Threats and mitigations
 
 | Threat                                                                                      | Primary mitigation                                                                                                                                                                                                                        | Residual risk / verification                                                                                                                                                                                             |
