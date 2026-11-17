@@ -146,8 +146,15 @@ npm run openapi --workspace=@pocketfinance/api
 ```
 
 The output is `apps/api/dist/openapi.json`. All finance routes use `/v1` for
-preferences, accounts, categories, transactions, and dashboard summaries. Deploy
+preferences, accounts, categories, transactions, transfers, History, and report summaries. Deploy
 matching API and mobile revisions together.
+
+Overview Reports reuses `GET /v1/dashboard/summary`. Supply paired inclusive
+`from`/`to` dates at most 366 days apart and one supported `currency`, or supply
+`allDates=true` with no dates after Clear. The latter returns null date bounds;
+bounded queries retain date-only strings. Deploy the matching client and API
+together for this contract extension. No new migration or dependency is required.
+See the [reporting contract](docs/mobile-redesign/finance-contracts.md#overview-reports-and-comparisons).
 
 ## Connect the native app
 
@@ -243,6 +250,34 @@ it is absent. A terminal that still has `NODE_ENV=development` from local API wo
 would otherwise leave Expo Router without its test safe-area measurements, causing
 blank `<RNCSafeAreaProvider />` trees and missing-screen failures. The script sets
 the value only in its child Node process; your API's development mode is preserved.
+
+### Focused Reports checks
+
+The range selector is shared with History, so include both consumers and navigation
+when changing it:
+
+```sh
+npm run test --workspace=@pocketfinance/mobile -- --runTestsByPath tests/reports-screen.test.tsx tests/report-data.test.ts tests/dashboard-data.test.ts tests/date-picker.test.tsx tests/history.test.tsx tests/shell.test.tsx
+npm run test --workspace=@pocketfinance/api -- dashboard.test.ts
+```
+
+With `TEST_DATABASE_URL` configured as described below, verify aggregate-query
+changes against the disposable database suites:
+
+```sh
+npm run test:integration --workspace=@pocketfinance/api -- tests/integration/dashboard.test.ts tests/integration/transfers.test.ts
+```
+
+If Expo's configuration step stalls while the existing TypeScript configuration
+is already present, run its compiler directly:
+
+```sh
+node node_modules/typescript/bin/tsc -p apps/mobile/tsconfig.json --noEmit
+```
+
+This bypasses Expo configuration generation; it does not verify native rendering.
+The [Reports verification record](docs/mobile-redesign/verification.md#issue-117-overview-reports-2026-11-17)
+separates executed checks from outstanding device acceptance.
 
 ### PostgreSQL integration tests
 

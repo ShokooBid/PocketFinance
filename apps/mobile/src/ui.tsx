@@ -15,6 +15,7 @@ import { theme } from "./theme";
 import { ScreenDecoration } from "./screen-decoration";
 import { UserMenu } from "./user-menu";
 import { HelpTooltip } from "./help-tooltip";
+import Svg, { Path } from "react-native-svg";
 
 export function Body({
   children,
@@ -92,14 +93,14 @@ export function Screen({
   backAction?: { label: string; onPress: () => void };
   showUserMenu?: boolean;
   onViewportLayout?: (layout: { width: number; height: number }) => void;
-  appearance?: "standard" | "welcome" | "entry";
+  appearance?: "standard" | "welcome" | "entry" | "overview";
 }>) {
   const router = useRouter();
   return (
     <SafeAreaView
       style={styles.safeArea}
       edges={
-        appearance === "entry"
+        appearance === "entry" || appearance === "overview"
           ? ["top", "left", "right"]
           : ["top", "bottom", "left", "right"]
       }
@@ -109,7 +110,8 @@ export function Screen({
         contentContainerStyle={[
           styles.content,
           appearance === "welcome" && styles.welcomeContent,
-          appearance === "entry" && styles.entryContent
+          appearance === "entry" && styles.entryContent,
+          appearance === "overview" && styles.overviewContent
         ]}
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
@@ -119,7 +121,7 @@ export function Screen({
       >
         <ScreenDecoration
           prominent={appearance === "welcome"}
-          entry={appearance === "entry"}
+          entry={appearance === "entry" || appearance === "overview"}
         />
         {(back || backAction) && (
           <Button
@@ -139,19 +141,32 @@ export function Screen({
         <View
           style={[
             styles.toolbar,
-            appearance === "entry" && styles.entryToolbar
+            appearance === "entry" && styles.entryToolbar,
+            appearance === "overview" && styles.overviewToolbar
           ]}
         >
+          {appearance === "overview" && (
+            <Svg width={30} height={30} viewBox="0 0 24 24" accessible={false}>
+              <Path
+                d="M3 7V5l13-3 2 5M3 7h17v14H3Zm13 5h6v5h-6Z"
+                stroke={theme.color.onPrimary}
+                strokeWidth={1.8}
+                fill="none"
+                strokeLinejoin="round"
+              />
+            </Svg>
+          )}
           <Text
             accessibilityRole="header"
             accessibilityLabel={`${title} screen`}
             style={[
               styles.heading,
               appearance === "welcome" && styles.welcomeHeading,
-              appearance === "entry" && styles.entryHeading
+              appearance === "entry" && styles.entryHeading,
+              appearance === "overview" && styles.overviewHeading
             ]}
           >
-            {title}
+            {appearance === "overview" ? "PocketFinance" : title}
           </Text>
           {showUserMenu && <UserMenu />}
         </View>
@@ -255,6 +270,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     gap: 6
   },
+  overviewContent: {
+    paddingTop: 14,
+    paddingHorizontal: 12,
+    paddingBottom: 28,
+    gap: 18
+  },
+  overviewToolbar: { marginBottom: 42, paddingHorizontal: 8, gap: 10 },
+  overviewHeading: { color: theme.color.onPrimary, fontSize: 24 },
   entryToolbar: {
     marginBottom: 0,
     paddingHorizontal: 8

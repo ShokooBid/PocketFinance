@@ -1,4 +1,58 @@
-# Issue #64 verification and handoff
+# Mobile redesign verification and handoff
+
+## Issue #117 Overview Reports (2026-11-17)
+
+Scope: the updated native Reports layout, one date range control shared with
+History, exact category reconciliation/comparisons, and bounded/all-date aggregate
+queries. These results were recorded during local implementation on
+`feat/issue-117-overview-reports`; they are not a claim that this branch has merged
+or that release/device acceptance is complete.
+
+| Check                                                          | Recorded result               |
+| -------------------------------------------------------------- | ----------------------------- |
+| Latest mobile Reports, date picker, History and navigation run | 4 suites, 77 tests passed     |
+| API dashboard unit tests                                       | 6 tests passed                |
+| PostgreSQL dashboard and transfer integration tests            | 2 suites, 18 tests passed     |
+| Mobile/API ESLint                                              | Passed                        |
+| Mobile direct TypeScript and API workspace typecheck           | Passed                        |
+| Focused Prettier and `git diff --check`                        | Passed                        |
+| Visual/device checks                                           | Skipped at the user's request |
+
+The latest mobile command was:
+
+```sh
+npm run test --workspace=@pocketfinance/mobile -- --runTestsByPath tests/reports-screen.test.tsx tests/date-picker.test.tsx tests/history.test.tsx tests/shell.test.tsx
+```
+
+API unit verification used
+`npm run test --workspace=@pocketfinance/api -- dashboard.test.ts`. Integration
+verification used Vitest's `vitest.integration.config.ts` with the dashboard and
+transfer suites, a loopback test connection and disposable synthetic schemas.
+Additional mobile report-data, dashboard-data, dashboard and transfer tests passed
+during the increment. This was focused verification, not a fresh full-repository run.
+
+Coverage includes local month/year/leap boundaries, Overview reentry, one range
+trigger, draft dismissal, single-day Apply, Clear/all dates, range limits,
+expansion, parent/direct/child reconciliation, currency isolation, zero baselines,
+comparison failures, financial invalidation, retry and stale responses. Database
+checks cover ownership, inclusive dates, aggregate totals and transfer exclusion.
+
+The Expo typecheck wrapper stalled at configuration generation and was stopped;
+`node node_modules/typescript/bin/tsc -p apps/mobile/tsconfig.json --noEmit` passed.
+Vitest worker startup required an approved run outside the restricted sandbox.
+No full export/build, screen-reader, large-text, scrolling/overlap, or native
+visual acceptance is claimed for this Reports increment. Those remain manual
+checks; use synthetic records for any future screenshots.
+
+The accompanying documentation review updates the README walkthrough/code map,
+architecture, UX, API contract, product boundaries, development commands and
+privacy notes. Documentation checks cover local file/heading links, paired code
+fences, focused formatting and whitespace. Application tests are not rerun for
+those Markdown-only edits; the implementation results above retain their original scope.
+
+The records below describe earlier increments and their verification at that
+time. Their statements about unexecuted tests or planned screens do not override
+this record or the [current UX](ux.md#history-and-overview).
 
 ## Issue #106 entry and History handoff
 
@@ -54,7 +108,7 @@ Date: 2026-10-30. Scope: accepted product decisions, UX states, planned finance
 contracts and updates to architecture/scope/threat-model documents. No runtime
 source, database schema, migrations, dependencies or generated OpenAPI were changed.
 
-## Source review
+## Historical source review (#64, 2026-10-30)
 
 | Current source                                                                              | Finding and resulting specification requirement                                                                                                                                                            |
 | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

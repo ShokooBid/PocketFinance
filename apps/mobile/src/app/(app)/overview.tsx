@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
-import { useFocusEffect, useRouter } from "expo-router";
-import { NavigationLink, Screen } from "../../ui";
-import { Dashboard } from "../../dashboard";
+import { useFocusEffect } from "expo-router";
+import { Screen } from "../../ui";
+import { ReportsScreen } from "../../reports-screen";
+import { createReportSource } from "../../report-data";
 import {
   createApiDashboardSource,
   createDemoDashboardSource
@@ -24,15 +25,20 @@ function DashboardScreen() {
   const changes = useFinanceChanges();
   const categories = useCategories();
   const { defaultCurrency } = usePreferences();
-  const router = useRouter();
   const [active, setActive] = useState(false);
   const [source] = useState(() => {
     if (session.status === "demo")
-      return createDemoDashboardSource(transactions, categories, changes);
+      return createReportSource(
+        createDemoDashboardSource(transactions, categories, changes),
+        categories
+      );
     if (session.status === "authenticated")
-      return createApiDashboardSource(
-        controller.client(session.generation),
-        changes
+      return createReportSource(
+        createApiDashboardSource(
+          controller.client(session.generation),
+          changes
+        ),
+        categories
       );
     throw new Error("Dashboard requires an application session.");
   });
@@ -43,20 +49,16 @@ function DashboardScreen() {
     }, [])
   );
   return (
-    <Screen title="Overview">
-      <Dashboard
-        source={source}
-        active={active}
-        defaultCurrency={defaultCurrency}
-        demo={session.status === "demo"}
-        onAdd={() => router.navigate("/")}
-        onOpenDetail={(id) =>
-          router.push({ pathname: "/transactions/[id]", params: { id } })
-        }
-      />
-      <NavigationLink href="/transactions" label="View transactions" />
-      <NavigationLink href="/categories" label="Manage categories" />
-      <NavigationLink href="/import" label="Preview CSV import" />
+    <Screen title="Overview" appearance="overview">
+      {/* A visit owns its report state. Ordinary renders/refreshes keep it;
+          leaving the route unmounts it so reentry uses the local current month. */}
+      {active && (
+        <ReportsScreen
+          source={source}
+          currency={defaultCurrency}
+          demo={session.status === "demo"}
+        />
+      )}
     </Screen>
   );
 }

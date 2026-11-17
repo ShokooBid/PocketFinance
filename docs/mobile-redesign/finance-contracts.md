@@ -1,8 +1,8 @@
 # Finance contracts and compatibility
 
 Issue [#64](https://github.com/ShokooBid/PocketFinance/issues/64). This is the
-engineering specification for follow-up implementation, not an assertion that
-these endpoints or migrations exist. Read the [decisions](README.md) and
+original engineering specification, with implemented increments identified below.
+Statement-processing contracts remain planned. Read the [decisions](README.md) and
 [UX specification](ux.md) first. #93 requires explicit permanent currency choice
 and an active account before finance access; keypad confirm validates and saves
 the complete transaction. #94 implements account-derived currency and removes
@@ -18,7 +18,7 @@ and mobile clients together. Earlier issue handoffs describe the historical
 staging plan; they do not define current routes. Breaking changes after a public
 release must use a new API version.
 
-Transfers (#73/#74) and live logical History (#75) are implemented. Statement
+Transfers (#73/#74), live logical History (#75), and Overview Reports (#117) are implemented. Statement
 batches below remain future work. Current OpenAPI documents implemented routes.
 
 New normal-transaction requests and responses omit `merchant`, `payee` and `payer`.
@@ -342,13 +342,49 @@ automatic navigation and editor lifecycle; #75 exposes the History handoff.
 Statements retain one logical transfer and label its incoming/outgoing account
 side. Archived references remain readable and all ledger queries remain owned.
 
-`GET /v1/dashboard/summary` requires from/to, one currency and `recentLimit` 1-20
-(default 5). It returns normal-transaction income/expense/net totals and recent
-normal transactions. #75 exposes `rootCategoryBreakdown` and `rootId` on each
-exact category group. Root totals include direct-root and child postings once;
-do not add the two breakdown representations together. Archived categories remain
-readable. The related totals/recent reads share one DB snapshot. Live History is
-implemented here; demo implementations are deliberately unchanged at the owner's request.
+#### Overview Reports and comparisons
+
+Issue #117 reuses `GET /v1/dashboard/summary` for Reports. Authentication determines
+the owner; one supported `currency` is required. Choose exactly one date mode:
+
+| Mode      | Request                                                             | Response bounds                |
+| --------- | ------------------------------------------------------------------- | ------------------------------ |
+| Bounded   | Paired inclusive `from`/`to` calendar dates, at most 366 days apart | The selected date-only strings |
+| All dates | `allDates=true`, without either date                                | `from: null`, `to: null`       |
+
+Missing/partial dates without allDates, mixed modes, invalid dates and unsupported
+currencies are rejected. `recentLimit` remains 1–20 (default 5) and never limits
+the aggregates. Reports' mobile adapter requests at most five recents, although the
+current Reports UI does not render them. Recents contain categorized non-transfer
+transactions; summary groups can represent uncategorized postings with null
+category/root IDs. Manual transaction creation still requires a category.
+
+Income/expenses are nonnegative safe integer minor units; net is income minus
+expenses. Transfers and opening balances are excluded. Currency filtering uses
+immutable Account.currency, including archived accounts. Exact category groups
+and `rootCategoryBreakdown` are two views of the same money: root totals include
+direct-root and child postings once, so never add the two representations together.
+Archived category labels remain readable with current names. Totals and recents
+share one repeatable-read snapshot per response; unsafe totals return
+`SUMMARY_AMOUNT_OUT_OF_RANGE` rather than rounded money.
+
+Reports selects comparison bounds on the client, then requests aggregate totals
+for each period. A full calendar month compares with the preceding calendar month;
+other bounded ranges compare with the immediately preceding equal inclusive
+length. For example, November 1–30, 2026 compares with October 1–31; November 17
+alone compares with November 16. All dates has no bounded baseline. Each request
+has its own database snapshot; no cross-request snapshot guarantee is implied.
+
+Change is `(current - previous) / previous * 100`, using positive expense
+magnitudes. Display expenses negatively. Income increases and spending decreases
+are favorable; zero change is neutral. A zero baseline, an unsupported preceding
+period or a failed comparison read yields a dash. Current totals can still render
+when only the comparison fails. A failed current/metadata read offers retry.
+
+Live reports use SQL aggregates, never transaction-page downloads. The demo reads
+its isolated in-memory snapshot and applies the same category/comparison rules.
+Clearing dates does not change currency or ownership scope. No migration is added
+for this extension; matching API/mobile revisions must be deployed together.
 
 Invariant example: account A opens at 10000 CAD minor units, B at zero. A normal
 expense of 1250 and transfer A -> B of 2500 produce A = 6250, B = 2500, period

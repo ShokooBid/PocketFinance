@@ -1,14 +1,13 @@
 import { z } from "zod";
 import { ClientFailure, type Transport } from "./auth/transport";
 import type { CategorySource } from "./category-data";
-import { appendTransactionPage } from "./transaction-history";
 import {
   amountText,
   calendarDate,
   currencySchema,
+  validDateFilter,
   transactionSchema,
   type Currency,
-  type Transaction,
   type TransactionSource
 } from "./transaction-data";
 
@@ -17,6 +16,10 @@ export const monthSchema = z
   .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
   .refine((month) => month >= "0001-01");
 export type DashboardSelection = { month: string; currency: Currency };
+export type SummarySelection =
+  | DashboardSelection
+  | { from: string; to: string; currency: Currency }
+  | { allDates: true; currency: Currency };
 const totalFields = {
   incomeMinor: z.number().int().nonnegative(),
   expensesMinor: z.number().int().nonnegative(),
@@ -24,22 +27,22 @@ const totalFields = {
 };
 export const dashboardSchema = z
   .object({
-    from: calendarDate,
-    to: calendarDate,
+    from: calendarDate.nullable(),
+    to: calendarDate.nullable(),
     currency: currencySchema,
     ...totalFields,
     categoryBreakdown: z.array(
       z.object({
-        categoryId: z.uuid(),
+        categoryId: z.uuid().nullable(),
         categoryName: z.string(),
-        rootId: z.uuid().optional(),
+        rootId: z.uuid().nullable().optional(),
         ...totalFields
       })
     ),
     rootCategoryBreakdown: z
       .array(
         z.object({
-          categoryId: z.uuid(),
+          categoryId: z.uuid().nullable(),
           categoryName: z.string(),
           ...totalFields
         })
@@ -90,7 +93,7 @@ export const dashboardSchema = z
   });
 export type DashboardSummary = z.infer<typeof dashboardSchema>;
 export interface DashboardSource {
-  summary(selection: DashboardSelection): Promise<DashboardSummary>;
+  summary(selection: SummarySelection): Promise<DashboardSummary>;
   subscribe(listener: () => void): () => void;
 }
 
@@ -139,7 +142,7 @@ export function dashboardFailureMessage(error: unknown) {
     if (error.kind === "rate-limit")
       return "Too many requests. Wait a moment, then try again.";
     if (error.kind === "validation")
-      return "This monthly summary cannot be displayed. Check your selection or review transactions.";
+      return "This summary cannot be displayed. Check your selection or review transactions.";
   }
   return "The summary could not be loaded. Check your connection and try again.";
 }
@@ -150,11 +153,15 @@ export function createApiDashboardSource(
 ): DashboardSource {
   return {
     subscribe: (listener) => changes.subscribe(listener),
-    async summary({ month, currency }) {
-      const { from, to } = monthRange(month);
+    async summary(selection) {
+      const { currency } = selection;
+      const { from, to } = summaryDates(selection);
+      if (!currencySchema.safeParse(currency).success)
+        throw new ClientFailure("validation");
+      const dates = from && to ? `from=${from}&to=${to}` : "allDates=true";
       const result = await client.send(
         "GET",
-        `/v1/dashboard/summary?from=${from}&to=${to}&currency=${currency}&recentLimit=5`,
+        `/v1/dashboard/summary?${dates}&currency=${currency}&recentLimit=5`,
         dashboardSchema
       );
       if (
@@ -162,13 +169,27 @@ export function createApiDashboardSource(
         result.to !== to ||
         result.currency !== currency ||
         result.recentTransactions.some(
-          (row) => row.currency !== currency || row.date < from || row.date > to
+          (row) =>
+            row.currency !== currency ||
+            (from !== null && row.date < from) ||
+            (to !== null && row.date > to)
         )
       )
         throw new ClientFailure("protocol");
       return result;
     }
   };
+}
+
+function summaryDates(selection: SummarySelection) {
+  if ("allDates" in selection) return { from: null, to: null };
+  const range =
+    "month" in selection
+      ? monthRange(selection.month)
+      : { from: selection.from, to: selection.to };
+  if (!range.from || !range.to || !validDateFilter(range))
+    throw new ClientFailure("validation");
+  return range;
 }
 
 // Explicit demo simulation only. Live finance totals always come from the API.
@@ -179,20 +200,20 @@ export function createDemoDashboardSource(
 ): DashboardSource {
   return {
     subscribe: (listener) => changes.subscribe(listener),
-    async summary({ month, currency }) {
-      const range = monthRange(month);
-      let rows: Transaction[] = [];
-      let after: string | undefined;
-      do {
-        const page = await transactions.list(range, after);
-        rows = appendTransactionPage(rows, page, after);
-        after = page.nextCursor ?? undefined;
-      } while (after);
+    async summary(selection) {
+      const { currency } = selection;
+      const range = summaryDates(selection);
+      if (!transactions.demoSnapshot)
+        throw new Error(
+          "Demo reports require an in-memory transaction snapshot."
+        );
+      const rows = await transactions.demoSnapshot({
+        ...(range.from && range.to ? { from: range.from, to: range.to } : {}),
+        currency
+      });
+      const categoryRows = await categories.list();
       const names = new Map(
-        (await categories.list()).map((category) => [
-          category.id,
-          category.name
-        ])
+        categoryRows.map((category) => [category.id, category.name])
       );
       const matching = rows.filter((row) => row.currency === currency);
       const groups = new Map<
@@ -209,7 +230,7 @@ export function createDemoDashboardSource(
       for (const row of matching) {
         const group = groups.get(row.categoryId) ?? {
           categoryId: row.categoryId,
-          categoryName: names.get(row.categoryId) ?? "Unavailable category",
+          categoryName: names.get(row.categoryId) ?? "Uncategorized",
           income: 0n,
           expenses: 0n
         };
@@ -243,6 +264,9 @@ export function createDemoDashboardSource(
           .map((group) => ({
             categoryId: group.categoryId,
             categoryName: group.categoryName,
+            rootId:
+              categoryRows.find((row) => row.id === group.categoryId)
+                ?.parentId ?? group.categoryId,
             ...totals(group.income, group.expenses)
           })),
         recentTransactions: matching.slice(0, 5)

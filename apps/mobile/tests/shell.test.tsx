@@ -15,6 +15,8 @@ import {
 } from "expo-router/testing-library";
 import { router } from "expo-router";
 import { AppState } from "react-native";
+import DateTimePicker from "react-native-ui-datepicker";
+import { currentMonth, monthRange } from "../src/dashboard-data";
 import { parsePreviewState } from "../src/navigation";
 import { localDate } from "../src/entry-data";
 import { chooseTransactionDate } from "./date-picker-fixtures";
@@ -215,13 +217,13 @@ describe("session navigation", () => {
   it("creates an account through Settings and returns to every unchanged draft field", async () => {
     await openShell();
     await enterDemo();
-    await tap(screen.getByRole("link", { name: "Manage categories" }));
+    await navigate(() => router.push("/categories"));
     await press("Add category");
     await field("Category name", "Onboarding food");
     await press("Save category");
     await screen.findByText("Onboarding food");
     await press("Back to previous screen");
-    await press("Add transaction");
+    await tap(screen.getByRole("link", { name: "Add" }));
     await screen.findByText("New transaction");
     await field("Amount", "12.34");
     await chooseTransactionDate("2026-11-01");
@@ -287,7 +289,7 @@ describe("session navigation", () => {
   it("returns with system Back after choosing an explicit default without erasing the draft", async () => {
     await openShell();
     await enterDemo();
-    await press("Add transaction");
+    await tap(screen.getByRole("link", { name: "Add" }));
     await screen.findByText("New transaction");
     await field("Amount", "8.50");
     await field("Note (optional)", "System Back draft");
@@ -333,13 +335,13 @@ describe("session navigation", () => {
   it("keeps a demo draft through Settings with currency already read-only before saving", async () => {
     await openShell();
     await enterDemo();
-    await tap(screen.getByRole("link", { name: "Manage categories" }));
+    await navigate(() => router.push("/categories"));
     await press("Add category");
     await field("Category name", "Currency food");
     await press("Save category");
     await screen.findByText("Currency food");
     await press("Back to previous screen");
-    await press("Add transaction");
+    await tap(screen.getByRole("link", { name: "Add" }));
     await screen.findByText("New transaction");
     await field("Amount", "12.34");
     await navigate(() => router.push("/settings"));
@@ -393,7 +395,7 @@ describe("session navigation", () => {
   it("repairs archive-all-accounts without losing the transaction draft", async () => {
     await openShell();
     await enterDemo();
-    await press("Add transaction");
+    await tap(screen.getByRole("link", { name: "Add" }));
     await screen.findByText("New transaction");
     await field("Amount", "8.50");
     await field("Note (optional)", "Retained through account repair");
@@ -582,7 +584,7 @@ describe("session navigation", () => {
       await press("Sign in with email");
       await screen.findByRole("header", { name: "New transaction screen" });
       await tap(screen.getByRole("link", { name: "Overview" }));
-      await tap(screen.getByRole("link", { name: "Manage categories" }));
+      await navigate(() => router.push("/categories"));
       expect(await screen.findByText(category.name)).toBeVisible();
       expect(screen.queryByText(/Demo only/)).toBeNull();
       await press("Back to previous screen");
@@ -597,7 +599,7 @@ describe("session navigation", () => {
       await tap(screen.getByRole("link", { name: "Overview" }));
       const pending = deferred<Response>();
       delayedCategories = pending.promise;
-      await tap(screen.getByRole("link", { name: "Manage categories" }));
+      await navigate(() => router.push("/categories"));
       expect(await screen.findByText("Loading categories")).toBeVisible();
       expect(screen.queryByText(category.name)).toBeNull();
       await act(async () => {
@@ -663,7 +665,7 @@ describe("session navigation", () => {
   it("enters the demo explicitly and removes protected history on exit", async () => {
     await openShell();
     await enterDemo();
-    await tap(screen.getByRole("link", { name: "View transactions" }));
+    await tap(screen.getByRole("link", { name: "History" }));
     await navigate(() => router.back());
     expect(shell.getPathname()).toBe("/overview");
     await openSettings();
@@ -727,20 +729,20 @@ describe("session navigation", () => {
   it("keeps demo categories across navigation and discards them after exit", async () => {
     await openShell();
     await enterDemo();
-    await tap(screen.getByRole("link", { name: "Manage categories" }));
+    await navigate(() => router.push("/categories"));
     await press("Add category");
     await field("Category name", "Synthetic demo category");
     await press("Save category");
     expect(await screen.findByText("Synthetic demo category")).toBeVisible();
     await press("Back to previous screen");
-    await tap(screen.getByRole("link", { name: "Manage categories" }));
+    await navigate(() => router.push("/categories"));
     expect(await screen.findByText("Synthetic demo category")).toBeVisible();
     await press("Back to previous screen");
     await openSettings();
     await press("User menu");
     await press("Exit demo and return to sign in");
     await enterDemo();
-    await tap(screen.getByRole("link", { name: "Manage categories" }));
+    await navigate(() => router.push("/categories"));
     expect(await screen.findByText("Food & Drinks (default)")).toBeVisible();
     expect(screen.queryByText("Synthetic demo category")).toBeNull();
   }, 15000);
@@ -748,10 +750,10 @@ describe("session navigation", () => {
   // This complete flow creates category/account data, saves a posting, edits it
   // through details and verifies both overview refreshes. Budget the whole flow
   // like the other long navigation scenarios, keeping per-lookup limits intact.
-  it("opens add/detail from the dashboard, retains selection on return and refreshes after edits", async () => {
+  it("resets Reports to the inclusive current month on reentry and refreshes saved and edited transactions", async () => {
     await openShell();
     await enterDemo("JPY");
-    await tap(screen.getByRole("link", { name: "Manage categories" }));
+    await navigate(() => router.push("/categories"));
     await press("Add category");
     await field("Category name", "Dashboard food");
     await press("Save category");
@@ -762,16 +764,26 @@ describe("session navigation", () => {
     await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
     await press("Create account");
     await navigate(() => router.back());
-    await press("Choose month");
-    await field("Month (YYYY-MM)", "2024-02");
-    await press("Show selected month");
-
-    await press("Add transaction");
+    await press(
+      `Date range: ${monthRange(currentMonth()).from} – ${monthRange(currentMonth()).to}`
+    );
+    await act(async () =>
+      fireEvent(screen.UNSAFE_getByType(DateTimePicker), "change", {
+        startDate: "2024-02-01",
+        endDate: "2024-02-29"
+      })
+    );
+    await press("Apply");
+    expect(
+      screen.getByRole("button", {
+        name: "Date range: 2024-02-01 – 2024-02-29"
+      })
+    ).toBeVisible();
+    await tap(screen.getByRole("link", { name: "Add" }));
     expect(await screen.findByText("New transaction")).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Choose transaction date" })
     ).toHaveProp("accessibilityHint", localDate());
-    await chooseTransactionDate("2024-02-01");
     expect(screen.getByLabelText("Account currency: JPY")).toBeVisible();
     await chooseAccount("History cash");
     await field("Amount", "250");
@@ -780,18 +792,32 @@ describe("session navigation", () => {
     await press("Save transaction");
     await screen.findByRole("header", { name: "History screen" });
     await tap(screen.getByRole("link", { name: "Overview" }));
-    expect(await screen.findByLabelText("Net deficit. JPY -250")).toBeVisible();
-    expect(screen.getByText("February 2024 · JPY")).toBeVisible();
-    await press("View Dashboard shop on 2024-02-01");
     expect(
-      await screen.findByRole("header", { name: "Transaction details screen" })
+      await screen.findByRole("header", { name: /Expenses\. JPY -250\./ })
     ).toBeVisible();
+    expect(
+      screen.getByRole("tab", { name: "Reports", selected: true })
+    ).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Overview", selected: true })
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", {
+        name: `Date range: ${monthRange(currentMonth()).from} – ${monthRange(currentMonth()).to}`
+      })
+    ).toBeVisible();
+    expect(
+      screen.getAllByRole("button", { name: /^Date range:/ })
+    ).toHaveLength(1);
+    await tap(screen.getByRole("link", { name: "History" }));
     await press("Edit Dashboard shop");
     await field("Amount", "300");
     await press("Update transaction");
     await screen.findByRole("header", { name: "History screen" });
     await tap(screen.getByRole("link", { name: "Overview" }));
-    expect(await screen.findByLabelText("Net deficit. JPY -300")).toBeVisible();
+    expect(
+      await screen.findByRole("header", { name: /Expenses\. JPY -300\./ })
+    ).toBeVisible();
   }, 15000);
 
   it("clears dashboard amounts and rejects a pending old-account summary on logout", async () => {
@@ -833,9 +859,20 @@ describe("session navigation", () => {
       return response({ items: [], nextCursor: null });
     });
     await openShell("/overview");
-    expect(await screen.findByLabelText("Income. USD 123.45")).toBeVisible();
+    expect(
+      await screen.findByRole("header", { name: /Income\. USD 123.45\./ })
+    ).toBeVisible();
     delayed = true;
-    await press("Refresh summary");
+    await press(
+      `Date range: ${monthRange(currentMonth()).from} – ${monthRange(currentMonth()).to}`
+    );
+    await act(async () =>
+      fireEvent(screen.UNSAFE_getByType(DateTimePicker), "change", {
+        startDate: `${currentMonth()}-02`,
+        endDate: `${currentMonth()}-02`
+      })
+    );
+    await press("Apply");
     await openSettings();
     await press("User menu");
     await press("Sign out");
@@ -844,8 +881,10 @@ describe("session navigation", () => {
     await act(async () => {
       pending.resolve(response({ private: "late old-account data" }));
     });
-    expect(await screen.findByText("No transactions this month")).toBeVisible();
-    expect(screen.queryByLabelText("Income. USD 123.45")).toBeNull();
+    expect(await screen.findByText("No income in this period.")).toBeVisible();
+    expect(
+      screen.queryByRole("header", { name: /Income\. USD 123.45\./ })
+    ).toBeNull();
     expect(screen.queryByText("Private category")).toBeNull();
   });
 
@@ -882,9 +921,9 @@ describe("session navigation", () => {
     expect(screen.getByText("Default currency: KWD")).toBeVisible();
     await tap(screen.getByRole("link", { name: "Overview" }));
     expect(
-      await screen.findByLabelText("Net balanced. KWD 0.000")
+      await screen.findByRole("header", { name: /Income\. KWD 0.000\./ })
     ).toBeVisible();
-    await tap(screen.getByRole("link", { name: "View transactions" }));
+    await tap(screen.getByRole("link", { name: "History" }));
     await press("Add transaction");
     expect(screen.getByLabelText("Account currency: KWD")).toBeVisible();
     await tap(screen.getByRole("link", { name: "Overview" }));
@@ -894,7 +933,7 @@ describe("session navigation", () => {
     // A pristine Add view does not create a dirty draft.
     await enterDemo();
     expect(
-      await screen.findByLabelText("Net balanced. CAD 0.00")
+      await screen.findByRole("header", { name: /Income\. CAD 0.00\./ })
     ).toBeVisible();
   }, 15000);
 
@@ -924,14 +963,14 @@ describe("session navigation", () => {
 
 describe("screen state previews", () => {
   it.each([
-    ["Categories", "Manage categories", "Food & Drinks (default)"],
-    ["CSV import", "Preview CSV import", "Nothing here yet"]
-  ])(
+    ["Categories", "/categories", "Food & Drinks (default)"],
+    ["CSV import", "/import", "Nothing here yet"]
+  ] as const)(
     "provides a labeled %s screen and recoverable state previews",
     async (title, link, readyText) => {
       await openShell();
       await enterDemo();
-      if (link) await tap(screen.getByRole("link", { name: link }));
+      await navigate(() => router.push(link));
       expect(
         screen.getByRole("header", { name: `${title} screen` })
       ).toBeVisible();
@@ -1083,8 +1122,12 @@ describe("transfer navigation", () => {
     await tap(screen.getByRole("link", { name: "History" }));
     expect(await screen.findByText("No transfers yet.")).toBeVisible();
     await tap(screen.getByRole("link", { name: "Overview" }));
-    expect(await screen.findByLabelText("Income. CAD 0.00")).toBeVisible();
-    expect(screen.getByLabelText("Expenses. CAD 0.00")).toBeVisible();
+    expect(
+      await screen.findByRole("header", { name: /Income\. CAD 0.00\./ })
+    ).toBeVisible();
+    expect(
+      screen.getByRole("header", { name: /Expenses\. CAD 0.00\./ })
+    ).toBeVisible();
   }, 20000);
 });
 

@@ -1,9 +1,10 @@
 # Mobile redesign: decisions and implementation contract
 
 Issue: [#64](https://github.com/ShokooBid/PocketFinance/issues/64).
-Decision date: 2026-10-30. Status: product questions answered; specification ready
-for implementation review. These documents specify future behavior, not features
-already shipped.
+Decision date: 2026-10-30. This folder contains the original design decisions and
+subsequent implementation records. Sections marked with an issue/date describe
+that increment; older handoff notes are historical. Start with the
+[root README](../../README.md) for current capabilities and demo instructions.
 
 Read the [UX specification](ux.md) and [finance contracts](finance-contracts.md)
 together. Follow-up issues implement the screens, services and migrations; #64
@@ -17,8 +18,25 @@ The implementation increments are tracked in
 The #69 cleanup supersedes the earlier rollout/version instructions: current
 finance uses one `/v1` contract without feature flags. The linked GitHub issues
 preserve the implementation history. Settings accounts and account-linked entry are wired
-to the live API; custom presentation, transfers and statement processing remain
-future work.
+to the live API. Manual entry, same-currency transfers and Reports are implemented;
+statement processing and Charts remain future work.
+
+## Overview Reports implementation (2026-11-17)
+
+Issue [#117](https://github.com/ShokooBid/PocketFinance/issues/117) implements the
+updated Reports layout and subsequent UI refinements. Overview defaults to the
+full current month on every visit, with separate expandable Income/Expenses cards.
+History and Reports use one shared date range control with Apply/Clear inside
+the calendar. Clear shows all dates; dismissing a draft keeps the applied filter.
+The currency banner, manual Refresh, auxiliary footer links and comparison footer
+are removed. Empty cards show a short sentence instead of placeholder categories.
+
+Current/comparison totals use the authenticated aggregate endpoint or an isolated
+demo snapshot. Money stays in integer minor units, currencies remain separate,
+and transfers are excluded. Charts is explicitly unavailable. See the
+[current UX](ux.md#history-and-overview),
+[report contract](finance-contracts.md#overview-reports-and-comparisons), and
+[verification evidence and limitations](verification.md#issue-117-overview-reports-2026-11-17).
 
 ## Live History implementation (2026-11-10)
 
@@ -69,7 +87,8 @@ Per-user provisioning/backfill commands are removed. Demo uses the same default
 IDs with isolated personal data. All four foundation increments are implemented;
 #72 navigation/keypad is now implemented locally; see
 [#72](https://github.com/ShokooBid/PocketFinance/issues/72) for its scope.
-Later reporting/transfers remain separate work.
+Reports and same-currency transfers are now implemented; further charts and
+statement processing remain separate work.
 The linked GitHub issues and verification record preserve historical behavior.
 
 ## Confirmed product decisions
@@ -126,6 +145,7 @@ flow exists. Demo uses the same setup rules in isolated session memory.
 | Entry home, custom keypad and navigation                             | [#72](https://github.com/ShokooBid/PocketFinance/issues/72)                                                                                                                           |
 | Atomic transfers and transfer UI                                     | [#73](https://github.com/ShokooBid/PocketFinance/issues/73), [#74](https://github.com/ShokooBid/PocketFinance/issues/74)                                                              |
 | Logical history, account filters and category rollups                | [#75](https://github.com/ShokooBid/PocketFinance/issues/75)                                                                                                                           |
+| Overview Reports, shared range filtering and period comparisons      | [#117](https://github.com/ShokooBid/PocketFinance/issues/117), building on the date-picker changes in [#116](https://github.com/ShokooBid/PocketFinance/pull/116)                     |
 | Inert AI entry points                                                | [#76](https://github.com/ShokooBid/PocketFinance/issues/76)                                                                                                                           |
 | End-to-end/device acceptance                                         | [#77](https://github.com/ShokooBid/PocketFinance/issues/77)                                                                                                                           |
 | Later account-bound review, CSV and PDF processing                   | [#78](https://github.com/ShokooBid/PocketFinance/issues/78), [#79](https://github.com/ShokooBid/PocketFinance/issues/79), [#80](https://github.com/ShokooBid/PocketFinance/issues/80) |
@@ -138,13 +158,13 @@ implemented Zod schemas and generated OpenAPI remain the executable contract.
 
 ## Verification and completion evidence
 
-| #64 acceptance criterion                                                                                 | Specification evidence                                                    |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Screen states cover loading, empty, invalid, saving, uncertain write, success, cancel and session expiry | [UX state matrix](ux.md#states-and-recovery)                              |
-| Add shows one Settings currency without a selector                                                       | [Entry fields](ux.md#transaction-entry)                                   |
-| Existing amounts, currencies, ownership and historical links survive                                     | [Migration and deployment](finance-contracts.md#migration-and-deployment) |
-| Merchant removal and legacy-client gate are explicit                                                     | [Version boundary](finance-contracts.md#version-boundary)                 |
-| CSV/PDF and functional AI are later increments requiring confirmation                                    | [Statement and AI flows](ux.md#statements-and-ai-later-increments)        |
+| #64 acceptance criterion                                                                                 | Specification evidence                                                                         |
+| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Screen states cover loading, empty, invalid, saving, uncertain write, success, cancel and session expiry | [UX state matrix](ux.md#states-and-recovery)                                                   |
+| Add shows one Settings currency without a selector                                                       | [Entry fields](ux.md#transaction-entry)                                                        |
+| Existing amounts, currencies, ownership and historical links survive                                     | [Migration and deployment](finance-contracts.md#migration-and-deployment)                      |
+| Merchant removal and legacy-client gate are explicit                                                     | [Version boundary](finance-contracts.md#version-boundary-updated-by-the-authorized-69-cleanup) |
+| CSV/PDF and functional AI are later increments requiring confirmation                                    | [Statement and AI flows](ux.md#statements-and-ai-later-increments)                             |
 
 Review the specification against current Prisma models, transaction/category/
 dashboard Zod contracts, mobile data adapters, session navigation and transport.

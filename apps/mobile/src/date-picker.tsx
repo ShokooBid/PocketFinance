@@ -183,6 +183,43 @@ export function SingleDateField({
   );
 }
 
+// One range trigger and calendar experience for History and Reports.
+export function RangeDateField({
+  expanded,
+  onToggle,
+  ...props
+}: ComponentProps<typeof RangeDatePicker> & {
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const dates =
+    props.from && props.to ? `${props.from} – ${props.to}` : "All dates";
+  return (
+    <View style={styles.rangeField}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Date range: ${dates}`}
+        accessibilityState={{
+          disabled: props.disabled,
+          selected: false,
+          expanded
+        }}
+        disabled={props.disabled}
+        onPress={onToggle}
+        style={({ pressed }) => [
+          styles.rangeTrigger,
+          (pressed || props.disabled) && styles.pressed
+        ]}
+      >
+        <Text numberOfLines={1} style={styles.rangeLabel}>
+          {`${dates}  ⌄`}
+        </Text>
+      </Pressable>
+      {expanded && <RangeDatePicker {...props} />}
+    </View>
+  );
+}
+
 export function RangeDatePicker({
   from,
   to,
@@ -253,6 +290,19 @@ export function RangeDatePicker({
 }
 
 const styles = StyleSheet.create({
+  rangeField: { gap: 10 },
+  rangeTrigger: {
+    minHeight: 42,
+    borderRadius: theme.pillRadius,
+    backgroundColor: theme.color.primarySoft,
+    borderWidth: 1,
+    borderColor: theme.color.softBorder,
+    paddingHorizontal: 11,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  rangeLabel: { fontSize: 13, color: theme.color.primary, fontWeight: "600" },
+  pressed: { opacity: 0.7 },
   navigationButton: {
     minWidth: theme.touchTarget,
     minHeight: theme.touchTarget,

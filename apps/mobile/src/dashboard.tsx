@@ -123,7 +123,7 @@ export function Dashboard({
       .sort(
         (a, b) =>
           b.expensesMinor - a.expensesMinor ||
-          a.categoryId.localeCompare(b.categoryId)
+          (a.categoryId ?? "").localeCompare(b.categoryId ?? "")
       ) ?? [];
   return (
     <>
@@ -267,7 +267,10 @@ export function Dashboard({
                     that total.
                   </Body>
                   {summary.rootCategoryBreakdown.map((root) => (
-                    <View key={root.categoryId} style={styles.card}>
+                    <View
+                      key={root.categoryId ?? "uncategorized"}
+                      style={styles.card}
+                    >
                       <SummaryCard
                         label={`${root.categoryName} (parent total)`}
                         value={`Income: ${moneyLabel(root.incomeMinor, currency)} · Expenses: ${moneyLabel(root.expensesMinor, currency)} · Net: ${moneyLabel(root.netMinor, currency)}`}
@@ -276,7 +279,7 @@ export function Dashboard({
                         .filter((group) => group.rootId === root.categoryId)
                         .map((group) => (
                           <SummaryCard
-                            key={group.categoryId}
+                            key={group.categoryId ?? "uncategorized"}
                             label={
                               group.categoryId === root.categoryId
                                 ? `${group.categoryName} (direct entries)`
@@ -295,7 +298,7 @@ export function Dashboard({
               {!summary.rootCategoryBreakdown &&
                 spending.map((group) => (
                   <SummaryCard
-                    key={group.categoryId}
+                    key={group.categoryId ?? "uncategorized"}
                     label={group.categoryName}
                     value={`Expenses: ${moneyLabel(group.expensesMinor, currency)}`}
                   />

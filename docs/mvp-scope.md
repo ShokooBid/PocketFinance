@@ -8,6 +8,10 @@ Accepted target, amended on 2026-10-30 by
 [finance contracts](mobile-redesign/finance-contracts.md). This describes planned
 behavior, not features already implemented. The manual redesign and subsequent
 statement-import increments have separate acceptance/release gates.
+The [root README](../README.md) describes current capabilities. Overview Reports
+is implemented in the #117 working branch; Charts remains unavailable. Local
+verification is recorded [separately](mobile-redesign/verification.md#issue-117-overview-reports-2026-11-17)
+and does not establish device or release acceptance.
 
 ## Product goal
 
@@ -75,14 +79,21 @@ tracking and statement import are useful, understandable, and dependable.
   validates the complete form and saves once; preserve drafts during navigation.
 - Validate all required fields and give accessible error feedback.
 
-### Dashboard and history
+### Reports and history
 
-- Show a deterministic period summary of income, expenses, and net total.
-- Show recent logical records and date/category/account filters. A transfer appears
-  once; exclude transfer postings and opening balances from income/expense/net.
+- Show separate Income and Expenses cards in Overview Reports, with expandable
+  category totals, signed comparisons, and a short empty message per section.
+- Load the full local current month on Overview entry. Share one range selector
+  with History; Apply commits dates and Clear shows all dates. Keep Charts unavailable
+  until a separate chart implementation is delivered.
+- Show logical records in History with date/category/account filters. A transfer
+  appears once; exclude transfer postings and opening balances from report totals.
 - Roll child/direct-parent category assignments into parent totals without double
   counting. Retain explicit currencies; never add unlike currencies.
 - Calculate all financial totals in the backend from persisted transactions.
+- Compare a full month with its preceding calendar month; compare other bounded
+  ranges with the preceding equal inclusive interval. All dates and unavailable
+  or zero baselines display a dash. Currency conversion remains excluded.
 
 ### Statement imports: subsequent delivery
 

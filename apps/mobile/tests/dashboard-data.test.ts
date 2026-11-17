@@ -63,6 +63,24 @@ describe("dashboard calendar and money rules", () => {
   });
 });
 describe("dashboard data boundaries", () => {
+  it("requests all-date aggregates explicitly and rejects bounded responses for a cleared filter", async () => {
+    const all = { ...empty, from: null, to: null };
+    const fetcher = jest.fn<FetchRequest>().mockResolvedValue(response(all));
+    const source = createApiDashboardSource(
+      createTransport("https://api.example.invalid", fetcher),
+      { subscribe: () => () => {} }
+    );
+    expect(await source.summary({ allDates: true, currency: "USD" })).toEqual(
+      all
+    );
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      "https://api.example.invalid/v1/dashboard/summary?allDates=true&currency=USD&recentLimit=5"
+    );
+    fetcher.mockResolvedValueOnce(response(empty));
+    await expect(
+      source.summary({ allDates: true, currency: "USD" })
+    ).rejects.toMatchObject({ kind: "protocol" });
+  });
   it("uses the summary endpoint and refuses malformed or mismatched responses", async () => {
     const fetcher = jest.fn<FetchRequest>().mockResolvedValue(response(empty));
     const changes = { subscribe: jest.fn(() => () => {}) };
@@ -92,11 +110,12 @@ describe("dashboard data boundaries", () => {
     }
     expect(dashboardSchema.safeParse(empty).success).toBe(true);
   });
-  it("keeps demo totals complete across pages, separates currencies, and retains archived names", async () => {
+  it("uses a complete in-memory snapshot without transaction pagination, separates currencies, and retains archived names", async () => {
     const categories = createDemoCategorySource({ catalog: false });
     await categories.create("Food");
     const transactions = createDemoTransactionSource(categories, accounts);
     const source = createDemoDashboardSource(transactions, categories);
+    const list = jest.spyOn(transactions, "list");
     const listener = jest.fn();
     const unsubscribe = source.subscribe(listener);
     const input = {
@@ -138,10 +157,27 @@ describe("dashboard data boundaries", () => {
       categoryBreakdown: [{ categoryName: "Food", expensesMinor: 5151 }]
     });
     expect(summary.recentTransactions).toHaveLength(5);
+    expect(list).not.toHaveBeenCalled();
     expect(
       summary.recentTransactions.every((row) => row.currency === "USD")
     ).toBe(true);
     expect(listener).toHaveBeenCalledTimes(54);
+    expect(
+      await source.summary({ allDates: true, currency: "USD" })
+    ).toMatchObject({
+      from: null,
+      to: null,
+      incomeMinor: 10000,
+      expensesMinor: 5252
+    });
+    expect(
+      await source.summary({ allDates: true, currency: "JPY" })
+    ).toMatchObject({
+      from: null,
+      to: null,
+      incomeMinor: 0,
+      expensesMinor: 999
+    });
     unsubscribe();
     await transactions.remove(summary.recentTransactions[0]!.id);
     expect(listener).toHaveBeenCalledTimes(54);
