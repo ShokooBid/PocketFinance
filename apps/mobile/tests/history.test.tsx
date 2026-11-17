@@ -5,7 +5,8 @@ import {
   render,
   renderHook,
   screen,
-  waitFor
+  waitFor,
+  within
 } from "@testing-library/react-native";
 import { createTransport } from "../src/auth/transport";
 import {
@@ -202,7 +203,7 @@ async function press(name: string | RegExp) {
 }
 
 describe("History filter selection", () => {
-  it("selects a range inline, applies only a complete range and preserves the other filters", async () => {
+  it("keeps range edits in draft until Apply, discards dismissed edits and clears dates without changing other filters", async () => {
     const list = jest
       .fn<HistorySource["list"]>()
       .mockImplementation(async (filter) => page([], { applied: filter }));
@@ -221,11 +222,14 @@ describe("History filter selection", () => {
     await press(/^Date range:/);
     await press("2");
     expect(list).toHaveBeenCalledTimes(2);
-    await press("Cancel date selection");
+    await press(/^Date range:/);
     expect(list).toHaveBeenCalledTimes(2);
     await press(/^Date range:/);
+    expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
     await press("2");
     await press("5");
+    expect(list).toHaveBeenCalledTimes(2);
+    await press("Apply");
     await waitFor(() => expect(list).toHaveBeenCalledTimes(3));
     expect(list.mock.calls[2]?.[0]).toMatchObject({
       from: `${currentMonth()}-02`,
@@ -233,11 +237,15 @@ describe("History filter selection", () => {
       accountId: id(10),
       type: "expense"
     });
-    expect(
-      screen.queryByRole("button", { name: "Cancel date selection" })
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
     await press(/^Date range:/);
-    await press("All dates");
+    await act(async () =>
+      fireEvent.press(
+        within(screen.getByLabelText("Date range picker")).getByRole("button", {
+          name: "Clear"
+        })
+      )
+    );
     await waitFor(() => expect(list).toHaveBeenCalledTimes(4));
     expect(list.mock.calls[3]?.[0]).toEqual({
       accountId: id(10),
@@ -245,7 +253,7 @@ describe("History filter selection", () => {
     });
     await press("Date range: All dates");
     await press("10");
-    await press("Use selected day");
+    await press("Apply");
     await waitFor(() => expect(list).toHaveBeenCalledTimes(5));
     expect(list.mock.calls[4]?.[0]).toMatchObject({
       from: `${currentMonth()}-10`,

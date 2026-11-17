@@ -1,21 +1,57 @@
 import {
   useCallback,
+  useLayoutEffect,
   useRef,
   useState,
   type ComponentProps,
   type ReactNode
 } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import DateTimePicker, { useDefaultStyles } from "react-native-ui-datepicker";
-import { pickerDate } from "./date-picker-data";
+import DateTimePicker, {
+  useDefaultStyles,
+  type CalendarDay
+} from "react-native-ui-datepicker";
+import {
+  calendarMonthRows,
+  dateRangeForApply,
+  pickerDate,
+  type PickerRange
+} from "./date-picker-data";
 import { theme } from "./theme";
 import { Button } from "./ui";
 
 type PickerProps = ComponentProps<typeof DateTimePicker>;
 type PickerSelection = Parameters<NonNullable<PickerProps["onChange"]>>[0];
 
-export function DatePicker(props: PickerProps) {
+// The library does not notify onMonthChange when its arrow buttons are used.
+// Observe the month actually rendered so sizing also follows arrows and years.
+function VisibleCalendarMonth({
+  month,
+  onChange,
+  children
+}: {
+  month: string;
+  onChange: (month: string) => void;
+  children: ReactNode;
+}) {
+  useLayoutEffect(() => onChange(month), [month, onChange]);
+  return children;
+}
+
+export function DatePicker({
+  children,
+  ...props
+}: PickerProps & { children?: ReactNode }) {
   const defaults = useDefaultStyles("light");
+  const fitMonth =
+    props.mode === "range" && props.containerHeight === undefined;
+  const [visibleMonth, setVisibleMonth] = useState(() =>
+    (pickerDate(props.startDate) ?? pickerDate(new Date())!).slice(0, 7)
+  );
+  const weekdaysHeight = props.hideWeekdays ? 0 : (props.weekdaysHeight ?? 25);
+  const monthHeight =
+    weekdaysHeight +
+    calendarMonthRows(visibleMonth, props.firstDayOfWeek) * theme.touchTarget;
   const current = useRef(props);
   current.current = props;
   // The library retains its initial selection callback. Forward to the latest
@@ -29,22 +65,71 @@ export function DatePicker(props: PickerProps) {
     else if (latest.mode === "multiple" && "dates" in selection)
       latest.onChange?.(selection);
   }, []);
+  const calendarStyles = {
+    ...defaults,
+    // Navigation icons follow the system scheme independently of
+    // useDefaultStyles("light"). Keep them visible on our white surface.
+    button_prev: styles.navigationButton,
+    button_next: styles.navigationButton,
+    button_prev_image: styles.navigationIcon,
+    button_next_image: styles.navigationIcon,
+    ...(fitMonth && {
+      days: { ...defaults.days, height: "auto" as const },
+      day_cell: { ...defaults.day_cell, minHeight: theme.touchTarget }
+    }),
+    selected: { backgroundColor: theme.color.primary, borderRadius: 12 },
+    selected_label: { color: theme.color.onPrimary },
+    range_fill: { backgroundColor: theme.color.primarySoft },
+    range_start_label: { color: theme.color.onPrimary },
+    range_end_label: { color: theme.color.onPrimary },
+    today: { borderColor: theme.color.primary, borderWidth: 1 },
+    today_label: { color: theme.color.primary }
+  };
+  function renderDay(day: CalendarDay) {
+    const label = props.components?.Day ? (
+      props.components.Day(day)
+    ) : (
+      <Text
+        style={[
+          calendarStyles.day_label,
+          day.isToday && calendarStyles.today_label,
+          !day.isCurrentMonth && calendarStyles.outside_label,
+          day.isSelected && calendarStyles.selected_label,
+          day.isDisabled && calendarStyles.disabled_label,
+          day.inMiddle && calendarStyles.range_middle_label,
+          day.rangeStart && calendarStyles.range_start_label,
+          day.rangeEnd && calendarStyles.range_end_label
+        ]}
+      >
+        {day.text}
+      </Text>
+    );
+    // The library's dayOfMonth includes the grid's leading empty cells.
+    const month =
+      day.isCurrentMonth && day.number === 1
+        ? pickerDate(day.date)?.slice(0, 7)
+        : undefined;
+    return month ? (
+      <VisibleCalendarMonth month={month} onChange={setVisibleMonth}>
+        {label}
+      </VisibleCalendarMonth>
+    ) : (
+      label
+    );
+  }
   return (
     <View style={styles.calendar}>
       <DateTimePicker
         {...props}
+        {...(fitMonth && { containerHeight: monthHeight })}
         onChange={onChange}
-        styles={{
-          ...defaults,
-          selected: { backgroundColor: theme.color.primary, borderRadius: 12 },
-          selected_label: { color: theme.color.onPrimary },
-          range_fill: { backgroundColor: theme.color.primarySoft },
-          range_start_label: { color: theme.color.onPrimary },
-          range_end_label: { color: theme.color.onPrimary },
-          today: { borderColor: theme.color.primary, borderWidth: 1 },
-          today_label: { color: theme.color.primary }
+        styles={calendarStyles}
+        components={{
+          ...props.components,
+          ...(fitMonth && { Day: renderDay })
         }}
       />
+      {children}
     </View>
   );
 }
@@ -82,23 +167,17 @@ export function SingleDateField({
         </Pressable>
       )}
       {open && (
-        <>
-          <DatePicker
-            mode="single"
-            date={value}
-            onChange={({ date }) => {
-              const next = pickerDate(date);
-              if (!disabled && next) {
-                onChange(next);
-                setOpen(false);
-              }
-            }}
-          />
-          <Button
-            label="Cancel date selection"
-            onPress={() => setOpen(false)}
-          />
-        </>
+        <DatePicker
+          mode="single"
+          date={value}
+          onChange={({ date }) => {
+            const next = pickerDate(date);
+            if (!disabled && next) {
+              onChange(next);
+              setOpen(false);
+            }
+          }}
+        />
       )}
     </>
   );
@@ -114,20 +193,21 @@ export function RangeDatePicker({
   from: string | undefined;
   to: string | undefined;
   disabled: boolean;
-  onChange: (range: {
-    from: string | undefined;
-    to: string | undefined;
-  }) => void;
+  onChange: (range: PickerRange) => void;
   onClose: () => void;
 }) {
   const [range, setRange] = useState({ from, to });
-  function select(next: typeof range) {
+  const selection = dateRangeForApply(range);
+  function select(next: PickerRange) {
     if (disabled) return;
     onChange(next);
     onClose();
   }
   return (
-    <View style={styles.range}>
+    <View
+      accessibilityLabel="Date range picker"
+      onAccessibilityEscape={onClose}
+    >
       <DatePicker
         mode="range"
         startDate={range.from}
@@ -136,38 +216,57 @@ export function RangeDatePicker({
         max={366}
         onChange={({ startDate, endDate }) => {
           if (disabled) return;
-          const next = { from: pickerDate(startDate), to: pickerDate(endDate) };
-          setRange(next);
-          if (next.from && next.to) select(next);
+          setRange({ from: pickerDate(startDate), to: pickerDate(endDate) });
         }}
-      />
-      <View style={styles.rangeActions}>
-        {range.from && !range.to && (
-          <Button
-            label="Use selected day"
-            disabled={disabled}
-            onPress={() => select({ from: range.from, to: range.from })}
-          />
-        )}
-        <Button
-          label="All dates"
-          disabled={disabled}
-          onPress={() => select({ from: undefined, to: undefined })}
-        />
-        <Button label="Cancel date selection" onPress={onClose} />
-      </View>
+      >
+        <View style={styles.rangeActions}>
+          <View style={styles.rangeAction}>
+            <Button
+              label="Clear"
+              hint="Remove the date filter and show all dates"
+              variant="outline"
+              size="compact"
+              disabled={disabled}
+              onPress={() => select({ from: undefined, to: undefined })}
+            />
+          </View>
+          <View style={styles.rangeAction}>
+            <Button
+              label="Apply"
+              hint={
+                range.from && !range.to
+                  ? "Apply the selected day, or choose another date for a range"
+                  : "Apply the selected date range"
+              }
+              variant="primary"
+              size="compact"
+              disabled={disabled || !selection}
+              onPress={() => {
+                if (selection) select(selection);
+              }}
+            />
+          </View>
+        </View>
+      </DatePicker>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  range: { gap: 8 },
+  navigationButton: {
+    minWidth: theme.touchTarget,
+    minHeight: theme.touchTarget,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+    backgroundColor: theme.color.primarySoft
+  },
+  navigationIcon: { width: 20, height: 20, tintColor: theme.color.primary },
   rangeActions: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    justifyContent: "flex-end"
+    gap: 8
   },
+  rangeAction: { flex: 1, minWidth: 0, paddingVertical: 4 },
   calendar: {
     padding: 8,
     borderRadius: 18,

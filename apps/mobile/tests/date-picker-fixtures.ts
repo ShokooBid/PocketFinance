@@ -26,4 +26,7 @@ export async function chooseDateRange(from: string, to: string) {
       endDate: new Date(`${to}T12:00:00`)
     });
   });
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Apply" }));
+  });
 }

@@ -32,6 +32,7 @@ export function Button({
   disabled = false,
   selected = false,
   variant = "secondary",
+  size = "default",
   leading
 }: {
   label: string;
@@ -39,7 +40,8 @@ export function Button({
   hint?: string;
   disabled?: boolean;
   selected?: boolean;
-  variant?: "primary" | "secondary";
+  variant?: "primary" | "secondary" | "outline";
+  size?: "default" | "compact";
   leading?: ReactNode;
 }) {
   return (
@@ -49,10 +51,13 @@ export function Button({
       accessibilityHint={hint}
       accessibilityState={{ selected, ...(disabled ? { disabled } : {}) }}
       disabled={disabled}
+      hitSlop={size === "compact" ? 4 : undefined}
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
+        size === "compact" && styles.buttonCompact,
         !!leading && styles.buttonWithIcon,
+        variant === "outline" && styles.buttonOutline,
         (variant === "primary" || selected) && styles.buttonPrimary,
         selected && styles.buttonSelected,
         (pressed || disabled) && styles.pressed
@@ -62,6 +67,7 @@ export function Button({
       <Text
         style={[
           styles.buttonText,
+          size === "compact" && styles.buttonTextCompact,
           !!leading && styles.buttonTextWithIcon,
           (variant === "primary" || selected) && styles.buttonTextPrimary
         ]}
@@ -291,6 +297,13 @@ const styles = StyleSheet.create({
     backgroundColor: theme.color.primary,
     borderColor: theme.color.primary
   },
+  buttonOutline: { backgroundColor: theme.color.surface },
+  buttonCompact: {
+    minHeight: 40,
+    paddingVertical: 6,
+    paddingHorizontal: 12
+  },
+  buttonTextCompact: { fontSize: 14 },
   buttonWithIcon: { flexDirection: "row", gap: 8 },
   buttonTextWithIcon: { flexShrink: 1 },
   buttonSelected: { borderColor: theme.color.accent, borderWidth: 2 },
