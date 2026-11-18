@@ -140,6 +140,7 @@ describe("category management", () => {
       list: async () => rows,
       create: async () => "created-id",
       recent: async () => [],
+      lastUsedCategoryId: async () => null,
       createChild,
       rename: async () => {},
       archive: async () => {}
@@ -193,6 +194,7 @@ describe("category management", () => {
       list: async () => rows,
       create: async () => "created-id",
       recent: async () => [],
+      lastUsedCategoryId: async () => null,
       rename: async () => {},
       archive
     });

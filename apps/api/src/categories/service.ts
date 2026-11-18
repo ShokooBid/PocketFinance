@@ -116,6 +116,14 @@ export function createCategoryService(db: PrismaClient) {
     async get(userId: string, id: string) {
       return serializeCategory(await visible(db, userId, id));
     },
+    async lastUsed(userId: string) {
+      const posting = await db.transaction.findFirst({
+        where: { userId, transferId: null },
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        select: { categoryId: true }
+      });
+      return { categoryId: posting?.categoryId ?? null };
+    },
     async recent(userId: string, limit: number) {
       return db.$transaction(
         async (tx) => {

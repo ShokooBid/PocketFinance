@@ -75,14 +75,24 @@ setup. Keep Settings, privacy and sign-out available. Reuse the Settings account
 form and restore the existing draft unchanged after repair. Hidden drafts remain
 mounted but inaccessible; loading/read failures are retry states, not evidence
 that the user has no accounts.
-Changing income/expense retains entered values; validate the resulting payload
-again. Keep entry coordination and validation separate from visual controls.
+Changing between Income and Expense keeps amount, account, date and note. It
+preselects the last saved category or subcategory if eligible, or the first
+eligible choice in the list. Edit starts with the saved category. A successful
+create or edit updates the last saved choice. Entry keeps that choice in memory
+for the app session. The next entry refresh after a deletion looks up the latest
+remaining choice.
 
 ## Category picker and management
 
 Start with Search, Recently used and All categories. Search matches roots and
 children, showing the full path for duplicate child names. Recently used derives
 from recently saved owned transactions, not the first loaded history page.
+
+Entry shows the built-in Income tree for income and the other built-in trees for
+expenses. Personal roots are eligible for both. A subcategory is eligible only
+where its root is eligible, including personal subcategories under built-in
+roots. Archived categories and children of archived roots are unavailable in
+entry.
 
 Selecting a root opens its children with an explicit Use this category action.
 Selecting a child returns it to the same draft. Fixed default roots/children

@@ -18,6 +18,7 @@ export interface CategorySource {
   recordPosting?(transactionId: string, categoryId: string | null): void;
   list(): Promise<Category[]>;
   recent(): Promise<Category[]>;
+  lastUsedCategoryId(): Promise<string | null>;
   create(name: string): Promise<string>;
   createChild?(name: string, parentId: string): Promise<string>;
   rename(id: string, name: string): Promise<void>;
@@ -81,6 +82,8 @@ export function createDemoCategorySource({
     sequence = 0,
     revision = 0;
   const postings = new Map<string, { categoryId: string; revision: number }>();
+  const latestPostings = () =>
+    [...postings.values()].sort((a, b) => b.revision - a.revision);
   const rows = () => [...defaults, ...personal];
   const key = (name: string) =>
     name.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
@@ -141,15 +144,12 @@ export function createDemoCategorySource({
       if (categoryId === null) postings.delete(id);
       else postings.set(id, { categoryId, revision: ++revision });
     },
+    async lastUsedCategoryId() {
+      return latestPostings()[0]?.categoryId ?? null;
+    },
     async recent() {
       const visible = rows();
-      const ids = [
-        ...new Set(
-          [...postings.values()]
-            .sort((a, b) => b.revision - a.revision)
-            .map((row) => row.categoryId)
-        )
-      ];
+      const ids = [...new Set(latestPostings().map((row) => row.categoryId))];
       return ids
         .flatMap((id) => {
           const row = visible.find((item) => item.id === id);

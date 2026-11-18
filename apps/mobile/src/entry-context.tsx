@@ -18,8 +18,10 @@ import {
   useFinanceChanges
 } from "./transaction-context";
 import { useCategories } from "./category-context";
+import { selectableEntryCategory } from "./category-hierarchy";
 import { usePreferences } from "./preferences";
 import {
+  defaultEntryCategory,
   entryErrors,
   entryInput,
   freshEntry,
@@ -63,11 +65,17 @@ function useEntryState() {
     transfers = useTransfers();
   const preferences = usePreferences();
   const changes = useFinanceChanges();
-  const [draft, setDraft] = useState(() =>
+  const [entryDraft, setDraft] = useState(() =>
     freshEntry(preferences.defaultCurrency)
   );
   const [accounts, setAccounts] = useState<Account[]>([]),
     [categories, setCategories] = useState<Category[]>([]);
+  const [lastCategoryId, setLastCategoryId] = useState<string | null>(null);
+  const lastCategoryLookup = useRef<"loaded" | Promise<void> | null>(null);
+  const rememberCategory = useCallback((id: string | null) => {
+    lastCategoryLookup.current = "loaded";
+    setLastCategoryId(id);
+  }, []);
   const [accountsReady, setReady] = useState(false),
     [categoriesReady, setCategoriesReady] = useState(false),
     [loading, setLoading] = useState(false);
@@ -87,6 +95,14 @@ function useEntryState() {
     id: string;
     kind: "transaction" | "transfer";
   } | null>(null);
+  // Defaults are derived for Add so refreshing choices never marks the draft
+  // dirty or replaces an eligible manual selection. Edit keeps its stored ID.
+  const draft = editingTransaction
+    ? entryDraft
+    : {
+        ...entryDraft,
+        categoryId: defaultEntryCategory(entryDraft, categories, lastCategoryId)
+      };
   const ready =
     accountsReady && (draft.direction === "transfer" || categoriesReady);
   const pending = useRef<PendingWrite | null>(null),
@@ -127,6 +143,37 @@ function useEntryState() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty, busy, uncertain]);
 
+  const loadLastCategory = useCallback(() => {
+    if (lastCategoryLookup.current === "loaded") return;
+    if (lastCategoryLookup.current) return lastCategoryLookup.current;
+    const request = categorySource.lastUsedCategoryId().then(
+      (id) => {
+        if (mounted.current && lastCategoryLookup.current === request)
+          rememberCategory(id);
+      },
+      () => {
+        if (lastCategoryLookup.current === request)
+          lastCategoryLookup.current = null;
+      }
+    );
+    lastCategoryLookup.current = request;
+    return request;
+  }, [categorySource, rememberCategory]);
+  useEffect(
+    () =>
+      source.subscribe((change) => {
+        if (change.type === "saved") {
+          rememberCategory(change.row.categoryId);
+        } else {
+          // A deletion may have removed the last posting. Read its replacement
+          // on the next entry refresh.
+          lastCategoryLookup.current = null;
+          setLastCategoryId(null);
+        }
+      }),
+    [source, rememberCategory]
+  );
+
   const reload = useCallback(async () => {
     const version = ++revision.current;
     setLoading(true);
@@ -135,7 +182,8 @@ function useEntryState() {
     try {
       const [nextAccounts, nextCategories] = await Promise.allSettled([
         accountSource.list(),
-        categorySource.list()
+        categorySource.list(),
+        loadLastCategory()
       ]);
       if (!mounted.current || version !== revision.current) return;
       if (nextAccounts.status === "rejected") throw nextAccounts.reason;
@@ -156,7 +204,7 @@ function useEntryState() {
     } finally {
       if (mounted.current && version === revision.current) setLoading(false);
     }
-  }, [accountSource, categorySource]);
+  }, [accountSource, categorySource, loadLastCategory]);
   useEffect(() => {
     if (financeReady) void reload();
   }, [financeReady, reload]);
@@ -231,7 +279,13 @@ function useEntryState() {
     setDirty(true);
     setErrors({});
     setMessage(null);
-    setDraft((previous) => ({ ...previous, ...patch }));
+    setDraft((previous) => ({
+      ...previous,
+      ...(patch.direction && patch.direction !== previous.direction
+        ? { categoryId: "" }
+        : {}),
+      ...patch
+    }));
   }
   function resetDraft() {
     const previousAdd = addDraftBeforeEdit.current;
@@ -350,10 +404,11 @@ function useEntryState() {
       initialized.current = previousAdd.initialized;
       dateEdited.current = previousAdd.dateEdited;
     }
-    setDraft(
-      previousAdd?.draft ??
-        ((previous) => ({ ...previous, amount: "", note: "" }))
-    );
+    if ("categoryId" in row) rememberCategory(row.categoryId);
+    setDraft((previous) => ({
+      ...(previousAdd?.draft ?? { ...previous, amount: "", note: "" }),
+      categoryId: ""
+    }));
     setSaved({ id: row.id, kind });
     setMessage(
       kind === "transfer"
@@ -529,7 +584,13 @@ function useEntryState() {
     },
     selectCategory(id: string, rows: Category[]) {
       setCategories(rows);
-      change({ categoryId: id });
+      const row = rows.find((item) => item.id === id);
+      if (
+        draft.direction !== "transfer" &&
+        row &&
+        selectableEntryCategory(row, rows, draft.direction)
+      )
+        change({ categoryId: id });
     },
     applyLink(link: { date?: string; currency?: EntryDraft["currency"] }) {
       if (locked.current || pending.current || dirty) {
@@ -555,7 +616,7 @@ function useEntryState() {
         addDraftBeforeEdit.current = dirty
           ? null
           : {
-              draft,
+              draft: entryDraft,
               initialized: initialized.current,
               dateEdited: dateEdited.current
             };
@@ -591,7 +652,7 @@ function useEntryState() {
         addDraftBeforeEdit.current = dirty
           ? null
           : {
-              draft,
+              draft: entryDraft,
               initialized: initialized.current,
               dateEdited: dateEdited.current
             };

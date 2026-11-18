@@ -116,14 +116,15 @@ Transaction itself; #96 replaces per-user defaults with shared rows.
 
 ### Category endpoints and immutable defaults
 
-| Operation                         | Contract                                                                                                                                                           |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /v1/categories`              | Bounded `status=active                                                                                                                                             | archived | all`, optional root `parentId`, optional search `q`; returns flat rows with parent IDs and a cursor. Fetch roots/children deliberately; do not imply a partial page is the whole tree. |
-| `GET /v1/categories/:id`          | Shared-or-owned lookup including archived personal history.                                                                                                        |
-| `GET /v1/categories/recent`       | Visible selections from the current user's transactions, ordered by most recent update, bounded `limit` 1-20 (default 8), with valid parent paths.                 |
-| `POST /v1/categories`             | `name`, optional `parentId` (omitted/null means root), optional valid presentation keys/order. Always creates a personal category; 201 returns the created row/ID. |
-| `PATCH /v1/categories/:id`        | Nonempty personal-category name/presentation patch; no parent/default-identity changes.                                                                            |
-| `POST /v1/categories/:id/archive` | Empty JSON object; archives an owned personal root and its active personal children atomically, or one personal child. Returns the resulting resource.             |
+| Operation                         | Contract                                                                                                                                                                           |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/categories`              | Status is `active`, `archived`, or `all`. Optional `parentId` and search `q` filter the flat rows. Results include parent IDs and a cursor, so one page may hold part of the tree. |
+| `GET /v1/categories/:id`          | Shared-or-owned lookup including archived personal history.                                                                                                                        |
+| `GET /v1/categories/recent`       | Visible selections from the current user's transactions, ordered by most recent update, bounded `limit` 1-20 (default 8), with valid parent paths.                                 |
+| `GET /v1/categories/last-used`    | Category ID on the current user's most recently saved non-transfer posting, or null. The ID can identify an archived category so entry can use its first eligible fallback.        |
+| `POST /v1/categories`             | `name`, optional `parentId` (omitted/null means root), optional valid presentation keys/order. Always creates a personal category; 201 returns the created row/ID.                 |
+| `PATCH /v1/categories/:id`        | Nonempty personal-category name/presentation patch; no parent/default-identity changes.                                                                                            |
+| `POST /v1/categories/:id/archive` | Empty JSON object; archives an owned personal root and its active personal children atomically, or one personal child. Returns the resulting resource.                             |
 
 Exactly two levels: a personal child uses an active shared root or its owner's
 personal root. Shared children require shared roots. Select either root or child for a normal transaction.

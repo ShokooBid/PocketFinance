@@ -1,10 +1,28 @@
 import type { Category } from "./category-data";
+import type { Transaction } from "./transaction-data";
 
 export function selectableCategory(row: Category, rows: Category[]) {
   if (row.archivedAt) return false;
   if (!row.parentId) return true;
   const parent = rows.find((item) => item.id === row.parentId);
   return !!parent && !parent.archivedAt && !parent.parentId;
+}
+
+export function selectableEntryCategory(
+  row: Category,
+  rows: Category[],
+  direction?: Transaction["direction"]
+) {
+  if (!selectableCategory(row, rows)) return false;
+  if (!direction) return true;
+  const root = row.parentId
+    ? rows.find((category) => category.id === row.parentId)
+    : row;
+  return (
+    !!root &&
+    (!root.isDefault ||
+      (root.defaultKey === "income") === (direction === "income"))
+  );
 }
 
 export function categoryPath(row: Category, rows: Category[]) {

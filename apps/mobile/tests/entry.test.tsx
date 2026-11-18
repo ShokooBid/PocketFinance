@@ -142,6 +142,155 @@ describe("shared transaction editing", () => {
   });
 });
 
+describe("entry category defaults", () => {
+  it("uses a saved personal subcategory only in the tab that shows its parent", async () => {
+    const rows = await categories.list();
+    const food = rows.find((row) => row.defaultKey === "food-drinks")!;
+    const income = rows.find((row) => row.defaultKey === "income")!;
+    const child = await categories.createChild!("Personal income", income.id);
+    categories.recordPosting?.("saved-income", child);
+    const entry = await openEntry();
+    expect(entry.result.current.draft.categoryId).toBe(food.id);
+    act(() => entry.result.current.change({ direction: "income" }));
+    expect(entry.result.current.draft.categoryId).toBe(child);
+  });
+
+  it("uses the first eligible choice, then remembers the exact last saved subcategory", async () => {
+    const lookup = jest.spyOn(categories, "lastUsedCategoryId");
+    const rows = await categories.list();
+    const food = rows.find((row) => row.defaultKey === "food-drinks")!;
+    const groceries = rows.find((row) => row.name === "Groceries")!;
+    const income = rows.find((row) => row.defaultKey === "income")!;
+    const entry = await openEntry();
+    expect(entry.result.current.draft.categoryId).toBe(food.id);
+    expect(entry.result.current.dirty).toBe(false);
+    act(() => {
+      entry.result.current.selectCategory(groceries.id, rows);
+      entry.result.current.change({ amount: "12.34", date: "2026-11-09" });
+    });
+    await act(async () => entry.result.current.save());
+    expect(entry.result.current.saved?.kind).toBe("transaction");
+    expect(entry.result.current.draft.categoryId).toBe(groceries.id);
+    await act(async () => entry.result.current.reload());
+    expect(lookup).toHaveBeenCalledTimes(1);
+    entry.unmount();
+
+    const reopened = await openEntry();
+    expect(lookup).toHaveBeenCalledTimes(2);
+    expect(reopened.result.current.draft.categoryId).toBe(groceries.id);
+    act(() => reopened.result.current.change({ direction: "income" }));
+    expect(reopened.result.current.draft.categoryId).toBe(income.id);
+    act(() => reopened.result.current.change({ direction: "expense" }));
+    expect(reopened.result.current.draft.categoryId).toBe(groceries.id);
+  });
+
+  it("shares a pending lookup and retries a failed lookup on the next refresh", async () => {
+    const pending = deferred<string | null>();
+    const lookup = jest
+      .spyOn(categories, "lastUsedCategoryId")
+      .mockReturnValueOnce(pending.promise);
+    const entry = renderHook(() => useEntry(), { wrapper: EntryProvider });
+    let refresh!: Promise<void>;
+    act(() => {
+      refresh = entry.result.current.reload();
+    });
+    expect(lookup).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      pending.reject(new ClientFailure("rate-limit"));
+      await refresh;
+    });
+    expect(entry.result.current.ready).toBe(true);
+    await act(async () => entry.result.current.reload());
+    await act(async () => entry.result.current.reload());
+    expect(lookup).toHaveBeenCalledTimes(2);
+  });
+
+  it("looks up the replacement after a confirmed transaction deletion", async () => {
+    const rows = await categories.list();
+    const groceries = rows.find((row) => row.name === "Groceries")!;
+    const shopping = rows.find((row) => row.defaultKey === "shopping")!;
+    const lookup = jest.spyOn(categories, "lastUsedCategoryId");
+    const entry = await openEntry();
+    for (const category of [shopping, groceries]) {
+      act(() => {
+        entry.result.current.selectCategory(category.id, rows);
+        entry.result.current.change({ amount: "3.50", date: "2026-11-09" });
+      });
+      await act(async () => entry.result.current.save());
+    }
+    expect(entry.result.current.draft.categoryId).toBe(groceries.id);
+    expect(lookup).toHaveBeenCalledTimes(1);
+    const id = entry.result.current.saved!.id;
+    await act(async () => source.remove(id));
+    await act(async () => entry.result.current.reload());
+    expect(entry.result.current.draft.categoryId).toBe(shopping.id);
+    expect(lookup).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens the saved category in Edit and only remembers choices from successful saves", async () => {
+    const rows = await categories.list();
+    const groceries = rows.find((row) => row.name === "Groceries")!;
+    const shopping = rows.find((row) => row.defaultKey === "shopping")!;
+    const entry = await openEntry();
+    act(() => {
+      entry.result.current.selectCategory(groceries.id, rows);
+      entry.result.current.change({ amount: "3.50", date: "2026-11-09" });
+    });
+    await act(async () => entry.result.current.save());
+    const id = entry.result.current.saved!.id;
+    const transaction = await source.get(id);
+    act(() => {
+      entry.result.current.consumeSaved();
+      entry.result.current.editTransaction(transaction, () => {});
+    });
+    expect(entry.result.current.draft.categoryId).toBe(groceries.id);
+    act(() => {
+      entry.result.current.selectCategory(shopping.id, rows);
+      entry.result.current.cancelEditing(() => {});
+    });
+    act(() => entry.result.current.leaving?.action());
+    act(() => entry.result.current.setLeaving(null));
+    expect(entry.result.current.draft.categoryId).toBe(groceries.id);
+    expect(await categories.lastUsedCategoryId()).toBe(groceries.id);
+
+    act(() => {
+      entry.result.current.editTransaction(transaction, () => {});
+      entry.result.current.selectCategory(shopping.id, rows);
+    });
+    await act(async () => entry.result.current.save());
+    expect((await source.get(id)).categoryId).toBe(shopping.id);
+    expect(entry.result.current.draft.categoryId).toBe(shopping.id);
+  });
+
+  it("falls back to the first eligible category when the last one was archived", async () => {
+    const first = await categories.create("A never used category");
+    const older = await categories.create("Older selection");
+    const latest = await categories.create("Latest selection");
+    categories.recordPosting?.("older", older);
+    categories.recordPosting?.("latest", latest);
+    await categories.archive(latest);
+    const entry = await openEntry();
+    expect(await categories.lastUsedCategoryId()).toBe(latest);
+    expect(entry.result.current.draft.categoryId).toBe(first);
+  });
+
+  it("asks for a replacement if an explicit draft choice is archived before saving", async () => {
+    const personal = await categories.create("Draft choice");
+    const rows = await categories.list();
+    const entry = await openEntry();
+    act(() => {
+      entry.result.current.selectCategory(personal, rows);
+      entry.result.current.change({ amount: "3.50", date: "2026-11-09" });
+    });
+    await categories.archive(personal);
+    await act(async () => entry.result.current.reload());
+    await act(async () => entry.result.current.save());
+    expect(entry.result.current.draft.categoryId).toBe(personal);
+    expect(entry.result.current.errors.categoryId).toBeDefined();
+    expect((await source.list({})).items).toEqual([]);
+  });
+});
+
 describe("entry keypad and external links", () => {
   it("rejects arithmetic, duplicate dots, excessive decimals and overflow without rounding", () => {
     expect(keypadAmount("", ".", "CAD")).toBe("0.");
