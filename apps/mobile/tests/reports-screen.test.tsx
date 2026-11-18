@@ -60,8 +60,7 @@ const fixture: Report = {
         ]
       }
     ]
-  },
-  comparison: { from: "2026-10-01", to: "2026-10-31" }
+  }
 };
 function harness() {
   let invalidate = () => {};

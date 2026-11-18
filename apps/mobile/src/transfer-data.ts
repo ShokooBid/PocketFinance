@@ -23,11 +23,11 @@ export const transferInput = z.strictObject({
 export const transferCreate = transferInput.extend({
   clientRequestId: z.uuid()
 });
-export const transferPatch = transferInput
+const transferPatch = transferInput
   .extend({ note: transferInput.shape.note.removeDefault() })
   .partial()
   .refine((value) => Object.keys(value).length > 0);
-export const transferSchema = transferInput.extend({
+const transferSchema = transferInput.extend({
   id: z.uuid(),
   currency: currencySchema,
   createdAt: z.iso.datetime(),
@@ -63,8 +63,8 @@ const pageSchema = z.object({
 export type Transfer = z.infer<typeof transferSchema>;
 export type TransferInput = z.infer<typeof transferInput>;
 export type TransferCreate = z.infer<typeof transferCreate>;
-export type TransferPatch = z.infer<typeof transferPatch>;
-export type TransferFilter = z.infer<typeof filterSchema>;
+type TransferPatch = z.infer<typeof transferPatch>;
+type TransferFilter = z.infer<typeof filterSchema>;
 export type TransferChange =
   { type: "saved"; row: Transfer } | { type: "deleted"; id: string };
 export interface TransferSource {

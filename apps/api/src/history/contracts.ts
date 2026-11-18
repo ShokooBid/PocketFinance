@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { calendarDate, currencySchema } from "../transactions/contracts.js";
 
-export const historyKind = z.enum(["transaction", "transfer"]);
+const historyKind = z.enum(["transaction", "transfer"]);
 const uuid = z.uuid().transform((value) => value.toLowerCase());
-export const historyCursor = z
+const historyCursor = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}_[0-9a-f-]{36}_(transaction|transfer)$/)
   .refine(
@@ -11,7 +11,7 @@ export const historyCursor = z
       calendarDate.safeParse(value.slice(0, 10)).success &&
       z.uuid().safeParse(value.slice(11, 47)).success
   );
-export const historyFilters = z.object({
+const historyFilters = z.object({
   from: calendarDate.optional(),
   to: calendarDate.optional(),
   accountId: uuid.optional(),
@@ -44,7 +44,7 @@ export const historyQuery = historyFilters
       Number(!!q.after) + Number(!!q.before) + Number(!!q.focusId) <= 1 &&
       !!q.focusId === !!q.focusKind
   );
-export const historyRow = z.object({
+const historyRow = z.object({
   kind: historyKind,
   id: z.uuid(),
   date: calendarDate,
@@ -67,7 +67,7 @@ const safeInteger = z
   .int()
   .min(-Number.MAX_SAFE_INTEGER)
   .max(Number.MAX_SAFE_INTEGER);
-export const historyDay = z.object({
+const historyDay = z.object({
   date: calendarDate,
   currency: currencySchema,
   count: safeInteger.nonnegative(),

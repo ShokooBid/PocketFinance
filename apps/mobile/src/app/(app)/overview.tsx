@@ -12,14 +12,14 @@ import { useTransactions, useFinanceChanges } from "../../transaction-context";
 import { useCategories } from "../../category-context";
 import { PreferencesReady, usePreferences } from "../../preferences";
 
-export default function DashboardRoute() {
+export default function OverviewRoute() {
   return (
     <PreferencesReady>
-      <DashboardScreen />
+      <OverviewScreen />
     </PreferencesReady>
   );
 }
-function DashboardScreen() {
+function OverviewScreen() {
   const { session, controller } = useSession();
   const transactions = useTransactions();
   const changes = useFinanceChanges();
@@ -40,7 +40,7 @@ function DashboardScreen() {
         ),
         categories
       );
-    throw new Error("Dashboard requires an application session.");
+    throw new Error("Overview requires an application session.");
   });
   useFocusEffect(
     useCallback(() => {

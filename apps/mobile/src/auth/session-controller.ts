@@ -11,7 +11,7 @@ import {
 } from "./contracts";
 import { ClientFailure, type FailureKind, type Transport } from "./transport";
 
-export type SessionState =
+type SessionState =
   | { status: "restoring" | "signing-out" }
   | { status: "signed-out"; notice?: string }
   | { status: "unavailable"; reason: FailureKind }

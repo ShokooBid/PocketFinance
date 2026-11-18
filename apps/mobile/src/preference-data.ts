@@ -2,7 +2,7 @@ import { z } from "zod";
 import { currencySchema, type Currency } from "./transaction-data";
 import { ClientFailure, type Transport } from "./auth/transport";
 
-export const currencyPreferencesSchema = z.object({
+const currencyPreferencesSchema = z.object({
   entryCurrency: currencySchema.nullable(),
   hasActiveAccounts: z.boolean(),
   defaultAccountId: z.uuid().nullable()

@@ -1,8 +1,7 @@
 import { type Href } from "expo-router";
 
-export type PreviewState = "loading" | "empty" | "error";
-export type PlaceholderPath =
-  "/" | "/transactions" | "/categories" | "/import" | "/settings";
+type PreviewState = "loading" | "empty" | "error";
+export type PlaceholderPath = "/categories" | "/import";
 
 // Router generates path types; this helper adds our narrower query contract.
 export function previewHref(pathname: PlaceholderPath, state: PreviewState) {

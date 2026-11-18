@@ -17,7 +17,7 @@ export const theme = {
     decorationDot: "#C65CC1",
     error: "#A32255"
   },
-  space: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
+  space: { sm: 8, md: 16, lg: 24 },
   radius: 22,
   pillRadius: 999,
   font: { body: 16, heading: 28 },

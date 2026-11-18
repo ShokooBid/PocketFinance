@@ -1,4 +1,3 @@
-import { type PropsWithChildren } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   parsePreviewState,
@@ -12,14 +11,13 @@ export function PlaceholderScreen({
   title,
   path,
   description,
-  emptyMessage,
-  children
-}: PropsWithChildren<{
+  emptyMessage
+}: {
   title: string;
   path: PlaceholderPath;
   description: string;
   emptyMessage: string;
-}>) {
+}) {
   const { state } = useLocalSearchParams();
   const preview = parsePreviewState(state);
   const router = useRouter();
@@ -27,7 +25,7 @@ export function PlaceholderScreen({
   const reset = () => router.replace(previewHref(path, "empty"));
 
   return (
-    <Screen title={title} back={path !== "/"}>
+    <Screen title={title} back>
       <Body>
         {session.status === "demo"
           ? "Demo only — you are not signed in. No financial data is loaded."
@@ -61,7 +59,6 @@ export function PlaceholderScreen({
           {...(preview === "error" ? { onRetry: reset } : {})}
         />
       )}
-      {children}
       <Body>Screen state previews</Body>
       {(["empty", "loading", "error"] as const).map((next) => (
         <Button

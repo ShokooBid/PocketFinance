@@ -17,13 +17,8 @@ import { UserMenu } from "./user-menu";
 import { HelpTooltip } from "./help-tooltip";
 import Svg, { Path } from "react-native-svg";
 
-export function Body({
-  children,
-  centered = false
-}: PropsWithChildren<{ centered?: boolean }>) {
-  return (
-    <Text style={[styles.body, centered && styles.centered]}>{children}</Text>
-  );
+export function Body({ children }: PropsWithChildren) {
+  return <Text style={styles.body}>{children}</Text>;
 }
 
 export function Button({
@@ -291,7 +286,6 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     fontWeight: "700"
   },
-  centered: { textAlign: "center" },
   toolbar: {
     flexDirection: "row",
     alignItems: "center",

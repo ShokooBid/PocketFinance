@@ -178,6 +178,8 @@ describe("session navigation", () => {
     expect(
       await screen.findByRole("button", { name: "Edit Keypad purchase" })
     ).toBeVisible();
+    await press("View details for Keypad purchase");
+    await screen.findByRole("header", { name: "Transaction details screen" });
     await press("Edit Keypad purchase");
     expect(
       await screen.findByRole("header", { name: "Edit transaction screen" })
@@ -211,6 +213,47 @@ describe("session navigation", () => {
         name: "Category: Food & Drinks",
         selected: true
       })
+    ).toBeVisible();
+  }, 20000);
+
+  it("keeps the shared entry draft through category creation and account selection", async () => {
+    await openShell();
+    await enterDemo();
+    await tap(screen.getByRole("link", { name: "Add" }));
+    await press("Income");
+    await field("Amount", "12.34");
+    await field("Note (optional)", "Keep my draft");
+    await chooseTransactionDate("2026-11-01");
+
+    await press("Choose category");
+    await screen.findByLabelText("Search categories");
+    expect(screen.queryByLabelText("Amount")).toBeNull();
+    await press("Cancel selection");
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
+    await press("Choose category");
+    await press("Add personal category");
+    await field("Category name", "New category");
+    await press("Create and select category");
+    expect(
+      screen.getByRole("button", {
+        name: "Category: New category",
+        selected: true
+      })
+    ).toBeVisible();
+
+    await chooseAccount("Demo setup cash");
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
+    expect(screen.getByLabelText("Note (optional)")).toHaveProp(
+      "value",
+      "Keep my draft"
+    );
+    expect(screen.getByText("2026-11-01")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Income", selected: true })
+    ).toBeVisible();
+    await press("Save transaction");
+    expect(
+      await screen.findByText(/2026-11-01.*12\.34 CAD.*Keep my draft/)
     ).toBeVisible();
   }, 20000);
 

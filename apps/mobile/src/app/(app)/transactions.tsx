@@ -197,7 +197,6 @@ function TransactionsScreen() {
           hasActiveAccounts
         }
         onCurrencySettings={openDraftSettings}
-        onAccountSettings={openDraftSettings}
         source={source}
         categories={categories}
         demo={session.status === "demo"}

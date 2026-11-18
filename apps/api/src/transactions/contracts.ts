@@ -16,7 +16,7 @@ const text = (max: number) =>
     .string()
     .max(max)
     .refine((value) => !/[\p{Cc}\p{Cf}\p{Cs}]/u.test(value));
-export const transactionInput = z.strictObject({
+const transactionInput = z.strictObject({
   accountId: z.uuid(),
   categoryId: z.uuid(),
   direction: z.enum(["income", "expense"]),

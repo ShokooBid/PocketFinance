@@ -35,7 +35,7 @@ const text = (max: number) =>
     .string()
     .max(max)
     .refine((value) => !/[\p{Cc}\p{Cf}\p{Cs}]/u.test(value));
-export const transactionInput = z.strictObject({
+const transactionInput = z.strictObject({
   direction: z.enum(["income", "expense"]),
   amountMinor: z.number().int().min(1).max(2147483647),
   date: calendarDate,
@@ -65,7 +65,7 @@ export const transactionCreate = transactionInput.extend({
 export const transactionPatch = transactionInput
   .partial()
   .refine((input) => Object.keys(input).length > 0);
-export type TransactionPatch = z.infer<typeof transactionPatch>;
+type TransactionPatch = z.infer<typeof transactionPatch>;
 export type TransactionCreate = z.infer<typeof transactionCreate>;
 export type TransactionInput = z.infer<typeof transactionInput>;
 export type Transaction = z.infer<typeof transactionSchema>;

@@ -157,7 +157,6 @@ describe("report aggregation and sources", () => {
     });
     expect(read).toHaveBeenCalledTimes(1);
     expect(read).toHaveBeenCalledWith({ allDates: true, currency: "USD" });
-    expect(report.comparison).toBeNull();
     expect(report.income).toEqual({ current: 0, previous: null, rows: [] });
     expect(report.expenses).toEqual({ current: 0, previous: null, rows: [] });
   });
@@ -179,7 +178,11 @@ describe("report aggregation and sources", () => {
     });
     expect(report.income).toMatchObject({ current: 100, previous: null });
     expect(report.expenses).toMatchObject({ current: 200, previous: null });
-    expect(report.comparison).toBeNull();
+    expect(read).toHaveBeenLastCalledWith({
+      from: "2026-10-01",
+      to: "2026-10-31",
+      currency: "USD"
+    });
   });
   it("reconciles direct parent postings, children and uncategorized money without adding root totals twice", () => {
     const current = summary([
@@ -270,7 +273,8 @@ describe("report aggregation and sources", () => {
       to: "2026-11-30",
       currency: "JPY"
     });
-    expect(report.comparison).toEqual({ from: "2026-10-01", to: "2026-10-31" });
+    expect(report.income.previous).toBe(0);
+    expect(report.expenses.previous).toBe(0);
     expect(fetcher.mock.calls.map((call) => String(call[0]))).toEqual([
       "https://api.example.invalid/v1/dashboard/summary?from=2026-11-01&to=2026-11-30&currency=JPY&recentLimit=5",
       "https://api.example.invalid/v1/dashboard/summary?from=2026-10-01&to=2026-10-31&currency=JPY&recentLimit=5"

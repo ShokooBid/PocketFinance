@@ -18,10 +18,12 @@ export function checkNavigationTypes() {
   router.push("/transactionz");
   // @ts-expect-error: unknown screen paths are not accepted.
   previewHref("/accounts", "empty");
+  // @ts-expect-error: this route has no placeholder states.
+  previewHref("/transactions", "empty");
   // @ts-expect-error: preview state is a closed union, not any string.
-  previewHref("/transactions", "success");
+  previewHref("/categories", "success");
   // @ts-expect-error: query values must use the expected string values.
-  previewHref("/transactions", 42);
+  previewHref("/categories", 42);
   // @ts-expect-error: a query state is required by this helper.
-  previewHref("/transactions");
+  previewHref("/categories");
 }

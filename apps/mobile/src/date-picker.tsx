@@ -38,7 +38,7 @@ function VisibleCalendarMonth({
   return children;
 }
 
-export function DatePicker({
+function DatePicker({
   children,
   ...props
 }: PickerProps & { children?: ReactNode }) {

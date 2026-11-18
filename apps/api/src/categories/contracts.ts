@@ -2,7 +2,6 @@ import { z } from "zod";
 import { financeName, normalizeFinanceName } from "../finance/names.js";
 
 // Match the migration's explicit ASCII whitespace set, independent of DB locale.
-export const normalizeCategoryName = normalizeFinanceName;
 
 const baseInput = z.strictObject({
   name: financeName
@@ -53,7 +52,7 @@ export const categoryQuery = baseQuery.extend({
   q: z
     .string()
     .max(1000)
-    .transform(normalizeCategoryName)
+    .transform(normalizeFinanceName)
     .pipe(z.string().max(100))
     .optional()
 });

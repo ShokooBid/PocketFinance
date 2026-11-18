@@ -238,7 +238,7 @@ export function Settings({
   );
 }
 
-export function DeletionInstructions() {
+function DeletionInstructions() {
   return (
     <>
       <Body>Request account deletion</Body>

@@ -223,7 +223,7 @@ const catalogIds: Record<string, string> = {
   "income.wage-invoices": "c96a1000-0000-4000-8000-000000000080"
 };
 
-export type CatalogCategory = {
+type CatalogCategory = {
   id: string;
   key: string;
   parentKey: string | null;
