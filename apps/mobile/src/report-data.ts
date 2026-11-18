@@ -1,10 +1,9 @@
 import type { Category, CategoryReadSource } from "./category-data";
 import type { DashboardSource, DashboardSummary } from "./dashboard-data";
-import { comparisonRange, type ReportRange } from "./report-period";
-import type { Currency } from "./transaction-data";
+import { comparisonRange } from "./report-period";
 import { ClientFailure } from "./auth/transport";
 import type { PickerRange } from "./date-picker-data";
-import { validDateFilter } from "./transaction-data";
+import { validDateFilter, type Currency } from "./transaction-data";
 
 export type ReportRow = {
   id: string;
@@ -22,9 +21,8 @@ export type ReportSection = {
 export type Report = {
   income: ReportSection;
   expenses: ReportSection;
-  comparison: ReportRange | null;
 };
-export type ReportSelection = PickerRange & { currency: Currency };
+type ReportSelection = PickerRange & { currency: Currency };
 export interface ReportSource {
   load(selection: ReportSelection): Promise<Report>;
   subscribe(listener: () => void): () => void;
@@ -36,7 +34,7 @@ export function aggregateReport(
   current: DashboardSummary,
   previous: DashboardSummary | null,
   categories: Category[]
-): Omit<Report, "comparison"> {
+): Report {
   if (previous && previous.currency !== current.currency)
     throw new ClientFailure("protocol");
   const metadata = new Map(categories.map((row) => [row.id, row]));
@@ -159,10 +157,7 @@ export function createReportSource(
           : null,
         categories.list()
       ]);
-      return {
-        ...aggregateReport(current, previous, rows),
-        comparison: previous ? comparison : null
-      };
+      return aggregateReport(current, previous, rows);
     }
   };
 }

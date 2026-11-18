@@ -36,7 +36,7 @@ export const accountInput = z.strictObject({
     .default(0),
   openingDate: calendarDate
 });
-export const accountSchema = accountInput.extend({
+const accountSchema = accountInput.extend({
   id: z.uuid(),
   archivedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
@@ -47,7 +47,7 @@ const detail = accountSchema.extend({
   balanceMinor: z.number().int()
 });
 export type Account = z.infer<typeof accountSchema>;
-export type AccountInput = z.infer<typeof accountInput>;
+type AccountInput = z.infer<typeof accountInput>;
 export interface AccountSource {
   list(): Promise<Account[]>;
   get(id: string, asOf?: string): Promise<z.infer<typeof detail>>;

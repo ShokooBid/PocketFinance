@@ -270,6 +270,84 @@ describe("session entry coordination", () => {
     });
     expect(entry.result.current.draft).toEqual(before);
   });
+  it("keeps the draft through preference recovery and waits for fresh account choices", async () => {
+    const list = jest.spyOn(finance.useAccounts(), "list");
+    const create = jest.spyOn(source, "create");
+    const entry = await openEntry();
+    await fillEntry(entry);
+    const draft = entry.result.current.draft;
+
+    policy.currencyState.status = "error";
+    entry.rerender({});
+    await act(async () => entry.result.current.save());
+    expect(create).not.toHaveBeenCalled();
+    expect(entry.result.current.draft).toEqual(draft);
+
+    const pendingAccounts = deferred<Account[]>();
+    list.mockReturnValueOnce(pendingAccounts.promise);
+    policy.currencyState.status = "ready";
+    entry.rerender({});
+    await act(async () => entry.result.current.save());
+    expect(entry.result.current.ready).toBe(false);
+    expect(create).not.toHaveBeenCalled();
+
+    await act(async () => pendingAccounts.resolve(rows));
+    expect(entry.result.current.ready).toBe(true);
+    expect(entry.result.current.draft).toEqual(draft);
+  });
+  it("keeps the draft and blocks saving to an account archived after selection", async () => {
+    const create = jest.spyOn(source, "create");
+    const entry = await openEntry();
+    await fillEntry(entry);
+    const draft = entry.result.current.draft;
+    rows = rows.map((row) =>
+      row.id === draft.accountId
+        ? { ...row, archivedAt: "2026-11-10T00:00:00Z" }
+        : row
+    );
+
+    await act(async () => entry.result.current.reload());
+    await act(async () => entry.result.current.save());
+    expect(create).not.toHaveBeenCalled();
+    expect(entry.result.current.errors.accountId).toBeDefined();
+    expect(entry.result.current.draft).toEqual(draft);
+  });
+  it("keeps a confirmed save when the account refresh fails", async () => {
+    const list = jest.spyOn(finance.useAccounts(), "list");
+    const create = jest.spyOn(source, "create");
+    const entry = await openEntry();
+    await fillEntry(entry);
+    list.mockRejectedValueOnce(new ClientFailure("network"));
+    await act(async () => entry.result.current.save());
+
+    expect(entry.result.current.saved).toMatchObject({ kind: "transaction" });
+    expect(entry.result.current.readError).toMatch(/could not be loaded/);
+    expect(entry.result.current.draft.amount).toBe("");
+    await act(async () => entry.result.current.reload());
+    expect(entry.result.current.readError).toBeNull();
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+  it("keeps a rejected draft and creates a fresh request ID for the corrected save", async () => {
+    const create = jest
+      .spyOn(source, "create")
+      .mockRejectedValueOnce(new ClientFailure("validation"));
+    const entry = await openEntry();
+    await fillEntry(entry);
+    const draft = entry.result.current.draft;
+    await act(async () => entry.result.current.save());
+
+    expect(entry.result.current.draft).toEqual(draft);
+    expect(entry.result.current.saved).toBeNull();
+    expect(entry.result.current.uncertain).toBe(false);
+    act(() => entry.result.current.change({ amount: "1.01" }));
+    await act(async () => entry.result.current.save());
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1]?.[0]).toMatchObject({ amountMinor: 101 });
+    expect(create.mock.calls[1]?.[0].clientRequestId).not.toBe(
+      create.mock.calls[0]?.[0].clientRequestId
+    );
+    expect(entry.result.current.saved).toMatchObject({ kind: "transaction" });
+  });
   it("requires explicit confirmation before discarding or signing out", async () => {
     const entry = await openEntry();
     await fillEntry(entry);

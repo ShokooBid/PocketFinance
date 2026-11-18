@@ -14,7 +14,6 @@ export const storedSessionSchema = z.object({
   credentials: credentialsSchema,
   refreshPending: z.boolean()
 });
-export type Credentials = z.infer<typeof credentialsSchema>;
 export type StoredSession = z.infer<typeof storedSessionSchema>;
 export const userSchema = z.object({
   id: z.uuid(),

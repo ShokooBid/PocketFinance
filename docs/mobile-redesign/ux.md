@@ -23,9 +23,9 @@ home in #72; the dashboard is now Overview behind the same setup gate.
 
 Keep `/transactions/[id]`, `/categories`, `/import`, `/privacy` and `/settings`
 reachable. Add account/transfer detail routes under their respective resources.
-Picker Back returns to its invoking draft; do not hard-code every Back to the
-old dashboard. Direct-open details without a stack return to History or Settings
-as appropriate. Invalid IDs/query parameters show a recoverable invalid-link state.
+Picker Back returns to its invoking draft. Direct-open details without a stack
+return to History or Settings as appropriate. Invalid IDs/query parameters show
+a recoverable invalid-link state.
 
 The reference supplies the pink/violet header, white surfaces, rounded rows and
 clear amount hierarchy. Use the existing theme/decorative components where
@@ -198,6 +198,7 @@ After a confirmed create or update, entry opens History with the saved resource 
 The History focus request reveals and highlights an owned record through bounded
 reads, explains only necessary filter adjustments, and keeps newer/older paging.
 Selecting a History row loads its current values into the shared entry editor.
+The Edit action on a transaction detail screen opens the same editor.
 The bottom destination reads Edit until successful update or confirmed cancellation;
 then it reads Add again. A failed or uncertain write keeps the draft and retry
 identity in the editor. Demo data remains isolated in memory.

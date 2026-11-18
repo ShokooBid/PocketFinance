@@ -41,11 +41,6 @@ async function press(name: string) {
     fireEvent.press(screen.getByRole("button", { name }));
   });
 }
-async function field(label: string, value: string) {
-  await act(async () => {
-    fireEvent.changeText(screen.getByLabelText(label), value);
-  });
-}
 async function fixture(count = 3) {
   const categories = createDemoCategorySource({ catalog: false });
   await categories.create("Food");
@@ -77,8 +72,12 @@ async function open(
   categories: Awaited<ReturnType<typeof fixture>>["categories"],
   detailId?: string
 ) {
+  const onAdd = jest.fn();
+  const onEdit = jest.fn<(transaction: Transaction) => void>();
   render(
     <TransactionManagement
+      onEdit={onEdit}
+      onAdd={onAdd}
       accounts={accounts}
       defaultAccountId={accountId()}
       defaultCurrency="USD"
@@ -92,6 +91,7 @@ async function open(
       screen.getByRole("button", { name: "Reload transactions and categories" })
     ).toBeEnabled()
   );
+  return { onAdd, onEdit };
 }
 const names = () =>
   screen
@@ -161,11 +161,13 @@ describe("transaction history and details", () => {
       undefined
     );
     expect(names()).toEqual(["Edit Synthetic 3", "Edit Synthetic 1"]);
-    await press("Edit Synthetic 3");
-    await press("Income");
-    await press("Save transaction");
+    const rowToEdit = (await source.list({})).items.find(
+      (row) => row.note === "Synthetic 3"
+    )!;
+    await act(async () => {
+      await source.update(rowToEdit.id, { direction: "income" });
+    });
     expect(names()).toEqual(["Edit Synthetic 1"]);
-    expect(screen.getByText(/no longer matches/)).toBeVisible();
     expect(
       screen.getByRole("button", {
         name: "Date range: 2026-10-01 – 2026-10-01"
@@ -251,21 +253,19 @@ describe("transaction history and details", () => {
       expect.stringContaining("changed while loading")
     );
   });
-  it("loads details by ID, cancels edits/deletion, updates the record, and shows a deleted state", async () => {
+  it("loads details by ID, delegates editing, and supports canceled and confirmed deletion", async () => {
     const { source, categories } = await fixture(1);
     const id = (await source.list({})).items[0]!.id;
     const get = jest.fn(source.get);
-    await open({ ...source, get }, categories, id);
+    const { onEdit } = await open({ ...source, get }, categories, id);
     expect(get).toHaveBeenCalledWith(id);
     expect(screen.queryByRole("button", { name: "Apply filters" })).toBeNull();
     expect(screen.getByText(/^Created:/)).toBeVisible();
     await press("Edit Synthetic 1");
-    await field("Note (optional)", "Cancelled edit");
-    await press("Cancel editing");
-    expect((await source.get(id)).note).toBe("Synthetic 1");
-    await press("Edit Synthetic 1");
-    await field("Note (optional)", "Corrected");
-    await press("Save transaction");
+    expect(onEdit).toHaveBeenCalledWith(await source.get(id));
+    await act(async () => {
+      await source.update(id, { note: "Corrected" });
+    });
     expect(
       screen.getByRole("button", { name: "Edit Corrected" })
     ).toBeVisible();
@@ -276,6 +276,44 @@ describe("transaction history and details", () => {
     await press("Confirm delete transaction");
     expect(screen.getByText(/Transaction deleted. Return/)).toBeVisible();
     await expect(source.get(id)).rejects.toMatchObject({ kind: "unavailable" });
+  });
+  it("requires a successful reload before acknowledging an uncertain deletion", async () => {
+    const { source, categories } = await fixture(1);
+    const remove = jest
+      .fn(source.remove)
+      .mockRejectedValueOnce(new ClientFailure("network"));
+    await open({ ...source, remove }, categories);
+    await press("Delete Synthetic 1");
+    await press("Confirm delete transaction");
+    const review = () =>
+      screen.getByRole("button", {
+        name: "I reviewed the list; enable changes"
+      });
+    expect(review()).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Confirm delete transaction" })
+    ).toBeDisabled();
+    await press("Reload transactions and categories");
+    expect(review()).toBeEnabled();
+    expect(remove).toHaveBeenCalledTimes(1);
+    await press("I reviewed the list; enable changes");
+    await press("Delete Synthetic 1");
+    await press("Confirm delete transaction");
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(names()).toEqual([]);
+  });
+  it("enables Add only after the history read has recovered", async () => {
+    const { source, categories } = await fixture(0);
+    const list = jest
+      .fn(source.list)
+      .mockRejectedValueOnce(new ClientFailure("network"));
+    const { onAdd } = await open({ ...source, list }, categories);
+    expect(
+      screen.getByRole("button", { name: "Add transaction" })
+    ).toBeDisabled();
+    await press("Reload transactions and categories");
+    await press("Add transaction");
+    expect(onAdd).toHaveBeenCalledTimes(1);
   });
   it("shows the same unavailable detail for missing or foreign records and can retry a network failure", async () => {
     const { source, categories } = await fixture(0);

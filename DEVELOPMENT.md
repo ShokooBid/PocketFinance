@@ -251,6 +251,16 @@ would otherwise leave Expo Router without its test safe-area measurements, causi
 blank `<RNCSafeAreaProvider />` trees and missing-screen failures. The script sets
 the value only in its child Node process; your API's development mode is preserved.
 
+### Focused entry and History checks
+
+Use these suites when changing the shared transaction editor or History actions.
+They cover draft recovery, pickers, navigation from History and transaction
+detail, and review after an uncertain deletion.
+
+```sh
+npm run test --workspace=@pocketfinance/mobile -- --runTestsByPath tests/entry.test.tsx tests/finance-picker.test.tsx tests/history.test.tsx tests/transaction-history.test.tsx tests/shell.test.tsx
+```
+
 ### Focused Reports checks
 
 The range selector is shared with History, so include both consumers and navigation

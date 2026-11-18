@@ -11,13 +11,12 @@ import {
   type TransactionSource
 } from "./transaction-data";
 
-export const monthSchema = z
+const monthSchema = z
   .string()
   .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
   .refine((month) => month >= "0001-01");
-export type DashboardSelection = { month: string; currency: Currency };
-export type SummarySelection =
-  | DashboardSelection
+type SummarySelection =
+  | { month: string; currency: Currency }
   | { from: string; to: string; currency: Currency }
   | { allDates: true; currency: Currency };
 const totalFields = {
@@ -116,23 +115,6 @@ export function adjacentMonth(month: string, delta: -1 | 1): string | null {
     Number(month.slice(0, 4)) * 12 + Number(month.slice(5)) - 1 + delta;
   if (index < 12 || index >= 10000 * 12) return null;
   return `${String(Math.floor(index / 12)).padStart(4, "0")}-${String((index % 12) + 1).padStart(2, "0")}`;
-}
-export function monthLabel(month: string) {
-  const names = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December"
-  ];
-  return `${names[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`;
 }
 export function moneyLabel(amountMinor: number, currency: Currency) {
   return `${currency} ${amountMinor < 0 ? "-" : ""}${amountText(Math.abs(amountMinor), currency)}`;

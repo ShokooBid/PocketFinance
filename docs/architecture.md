@@ -133,6 +133,11 @@ Expo mobile app  ── HTTPS/JSON ──>  Fastify REST API  ──>  PostgreSQ
 - Add transaction becomes the normal post-login home; History, Overview and
   Settings are persistent destinations. Category/account pickers return to the
   session-owned draft. Session restoration/authorization still precede finance UI.
+- [TransactionEntry](../apps/mobile/src/transaction-entry.tsx) renders the shared
+  Add and Edit form. [EntryProvider](../apps/mobile/src/entry-context.tsx) owns
+  the draft, validation, and save recovery. Demo History and the transaction
+  detail route use [TransactionManagement](../apps/mobile/src/transaction-management.tsx)
+  to display records and handle deletion. Their edit actions open the shared form.
 - The custom amount keypad has digits, decimal, backspace and confirm, with no
   arithmetic. Confirm validates all fields and saves through one guarded submit.
 - Merchant/payee/payer fields are removed from redesigned input/DTOs; one optional
@@ -181,8 +186,7 @@ calendar. Refreshes and category expansion keep that applied selection.
   It sums exact category postings, including direct-parent entries, without adding
   the API's separate root totals again.
 - `dashboard-data.ts` adapts authenticated aggregate queries and isolated demo
-  snapshots. Live reporting never fetches transaction pages. The older
-  `dashboard.tsx` is no longer mounted by the Overview route.
+  snapshots. Live reporting never fetches transaction pages.
 
 Current and comparison periods use separate aggregate requests, each with its own
 repeatable-read database snapshot. They are not one cross-request snapshot.

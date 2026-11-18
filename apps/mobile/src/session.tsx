@@ -8,16 +8,9 @@ import {
 } from "react";
 import { createRuntimeSession } from "./auth/runtime";
 import type { SessionController } from "./auth/session-controller";
-export type { SessionState as ShellSession } from "./auth/session-controller";
-
 const SessionContext = createContext<SessionController | null>(null);
-export function SessionProvider({
-  children,
-  controller
-}: PropsWithChildren<{ controller?: SessionController }>) {
-  const [sessionController] = useState(
-    () => controller ?? createRuntimeSession()
-  );
+export function SessionProvider({ children }: PropsWithChildren) {
+  const [sessionController] = useState(createRuntimeSession);
   useEffect(() => {
     void sessionController.restore();
   }, [sessionController]);

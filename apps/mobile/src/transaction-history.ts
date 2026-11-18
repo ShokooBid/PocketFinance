@@ -9,7 +9,7 @@ import type {
 export type TransactionChange =
   { type: "saved"; row: Transaction } | { type: "deleted"; id: string };
 export const transactionKey = (row: Transaction) => `${row.date}_${row.id}`;
-export function matchesFilter(row: Transaction, filter: TransactionFilter) {
+function matchesFilter(row: Transaction, filter: TransactionFilter) {
   return (
     (!filter.accountId || row.accountId === filter.accountId) &&
     (!filter.currency || row.currency === filter.currency) &&

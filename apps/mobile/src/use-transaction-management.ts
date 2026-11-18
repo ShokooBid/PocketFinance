@@ -1,46 +1,27 @@
-import { randomUUID } from "expo-crypto";
 import type { Account, AccountSource } from "./account-data";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Category, CategorySource } from "./category-data";
-import { categoryPath, selectableCategory } from "./category-hierarchy";
+import { categoryPath } from "./category-hierarchy";
 import { ClientFailure } from "./auth/transport";
 import {
   appendTransactionPage,
-  matchesFilter,
   reconcileTransactions
 } from "./transaction-history";
 import {
-  amountText,
   validDateFilter,
-  draftInput,
   transactionFailureMessage,
   uncertainWrite,
   type Currency,
-  type TransactionCreate,
   type Transaction,
-  type TransactionDraft,
   type TransactionFilter,
   type TransactionSource
 } from "./transaction-data";
 
-export function newDraft(): TransactionDraft {
-  const now = new Date();
-  return {
-    direction: "expense",
-    amount: "",
-    currency: "CAD",
-    date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`,
-    categoryId: "",
-    accountId: "",
-    note: ""
-  };
-}
 export function useTransactionManagement({
   source,
   categories,
   accounts,
   defaultAccountId = null,
-  initialCreate,
   defaultCurrency = "CAD",
   preferencesReady = true,
   active = true,
@@ -53,20 +34,17 @@ export function useTransactionManagement({
   accounts: AccountSource;
   defaultAccountId?: string | null;
   demo?: boolean;
-  initialCreate?: { date: string; currency: Currency };
   defaultCurrency?: Currency;
   preferencesReady?: boolean;
   onCurrencySettings?: () => void;
-  onAccountSettings?: () => void;
   active?: boolean;
   detailId?: string;
   focusId?: string;
   onFocusConsumed?: () => void;
   onOpenDetail?: (id: string) => void;
-  onEdit?: (row: Transaction) => void;
+  onEdit: (row: Transaction) => void;
   onAdd?: () => void;
 }) {
-  const pendingCreate = useRef<TransactionCreate | null>(null);
   const [accountChoices, setAccountChoices] = useState<Account[]>([]);
   const [accountsReady, setAccountsReady] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
@@ -92,17 +70,6 @@ export function useTransactionManagement({
   const [after, setAfter] = useState<string | null>(null);
   const [filter, setFilter] = useState<TransactionFilter>({});
   const [applied, setApplied] = useState<TransactionFilter>({});
-  const [draft, setDraft] = useState<TransactionDraft | null>(() =>
-    initialCreate
-      ? {
-          ...newDraft(),
-          accountId: defaultAccountId ?? "",
-          ...initialCreate
-        }
-      : null
-  );
-  const [picker, setPicker] = useState<"category" | "account" | null>(null);
-  const [editing, setEditing] = useState<Transaction | null>(null);
   const [deleting, setDeleting] = useState<Transaction | null>(null);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
@@ -136,8 +103,6 @@ export function useTransactionManagement({
           if (change.type === "deleted" && change.id === detailId) {
             setRows([]);
             setDeleted(true);
-            setDraft(null);
-            setEditing(null);
             setDeleting(null);
           }
         } else {
@@ -245,7 +210,7 @@ export function useTransactionManagement({
     } catch {
       if (mounted.current && version === accountRevision.current)
         setAccountError(
-          "Accounts could not be refreshed. Your draft is preserved. Reload accounts before saving."
+          "Accounts could not be refreshed. Reload accounts before changing transactions."
         );
     }
   }, [accounts]);
@@ -261,18 +226,6 @@ export function useTransactionManagement({
     defaultCurrency,
     defaultAccountId
   ]);
-  useEffect(() => {
-    if (!accountsReady || editing || pendingCreate.current || !defaultAccountId)
-      return;
-    const account = accountChoices.find((row) => row.id === defaultAccountId);
-    if (!account || account.archivedAt) return;
-    setDraft((previous) =>
-      previous && !previous.accountId && previous.currency === account.currency
-        ? { ...previous, accountId: account.id }
-        : previous
-    );
-  }, [accountsReady, accountChoices, defaultAccountId, editing]);
-
   async function load(nextFilter: TransactionFilter, more = false) {
     if (lock.current) return;
     if (!validDateFilter(nextFilter)) {
@@ -328,166 +281,35 @@ export function useTransactionManagement({
       if (mounted.current) setLoadingMore(false);
     }
   }
-  async function mutate(remove = false, retry = false) {
-    if (lock.current || (uncertain && !retry) || !ready || !accountsReady)
+  async function remove() {
+    if (lock.current || uncertain || !ready || !accountsReady || !deleting)
       return;
-    if (
-      !remove &&
-      (!preferencesReady || (!editing && draft?.currency !== defaultCurrency))
-    ) {
-      setError(
-        "Reload currency settings or explicitly start a new draft in the configured currency. Your current draft is unchanged."
-      );
-      return;
-    }
-    let input;
-    // An explicit retry sends the captured payload, regardless of later choices.
-    // The server revalidates eligibility if the original row no longer exists.
-    if (!remove && !(retry && pendingCreate.current)) {
-      try {
-        const account = accountChoices.find(
-          (row) => row.id === draft!.accountId
-        );
-        if (
-          !account ||
-          (account.archivedAt && account.id !== editing?.accountId)
-        )
-          throw new ClientFailure("validation", "INVALID_ACCOUNT");
-        input = draftInput(draft!, account);
-      } catch {
-        setError(
-          "Check amount (positive, within 2147483647 minor units), currency decimals, real date, account, category and note (up to 2000). Text cannot contain control characters."
-        );
-        return;
-      }
-    }
     lock.current = true;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      if (remove) {
-        await source.remove(deleting!.id);
-        if (!mounted.current) return;
-        setRows((previous) =>
-          previous.filter((row) => row.id !== deleting!.id)
-        );
-        setDeleting(null);
-        setNotice("Transaction deleted.");
-      } else {
-        const saved = editing
-          ? await source.update(editing.id, input!)
-          : await source.create(
-              (pendingCreate.current ??= {
-                ...input!,
-                clientRequestId: randomUUID()
-              })
-            );
-        if (!mounted.current) return;
-        // Keep the current filters and loaded rows. The confirmed response is
-        // authoritative; edits that leave the filter disappear from history.
-        setRows((previous) =>
-          detailId
-            ? [saved]
-            : reconcileTransactions(
-                previous,
-                { type: "saved", row: saved },
-                applied
-              )
-        );
-        setAfter(null);
-        pendingCreate.current = null;
-        setUncertain(false);
-        setDraft(null);
-        setEditing(null);
-        setNotice(
-          detailId || matchesFilter(saved, applied)
-            ? "Transaction saved. Reload history to continue paging."
-            : "Transaction saved. It no longer matches the active filters; clear filters to find it."
-        );
-      }
+      await source.remove(deleting.id);
+      if (!mounted.current) return;
+      setRows((previous) => previous.filter((row) => row.id !== deleting.id));
+      setDeleting(null);
+      setNotice("Transaction deleted.");
     } catch (failure) {
       if (!mounted.current) return;
       setError(transactionFailureMessage(failure));
       if (uncertainWrite(failure)) {
         setUncertain(true);
         setReviewed(false);
-      } else {
-        pendingCreate.current = null;
       }
     } finally {
       lock.current = false;
       if (mounted.current) setBusy(false);
     }
   }
-  function edit(row?: Transaction) {
+  function acknowledgeDelete() {
+    setUncertain(false);
     setError(null);
-    setNotice(null);
     setDeleting(null);
-    pendingCreate.current = null;
-    setEditing(row ?? null);
-    setDraft(
-      row
-        ? {
-            direction: row.direction,
-            amount: amountText(row.amountMinor, row.currency),
-            currency: row.currency,
-            date: row.date,
-            categoryId: row.categoryId,
-            accountId: row.accountId,
-            note: row.note ?? ""
-          }
-        : {
-            ...newDraft(),
-            currency: defaultCurrency,
-            accountId: defaultAccountId ?? ""
-          }
-    );
-  }
-  const draftCurrencyMismatch =
-    draft !== null && !editing && draft.currency !== defaultCurrency;
-  const draftAccountUnavailable =
-    !!draft?.accountId &&
-    !accountChoices.some(
-      (row) =>
-        row.id === draft.accountId &&
-        row.currency === draft.currency &&
-        (!row.archivedAt || row.id === editing?.accountId)
-    );
-  const draftCategoryUnavailable =
-    !!draft?.categoryId &&
-    draft.categoryId !== editing?.categoryId &&
-    !choices.some(
-      (row) => row.id === draft.categoryId && selectableCategory(row, choices)
-    );
-  const draftHistoricalCategory =
-    !!draft &&
-    draft.categoryId === editing?.categoryId &&
-    choices.some(
-      (row) => row.id === draft.categoryId && !selectableCategory(row, choices)
-    );
-  const draftHistoricalAccount =
-    !!draft &&
-    draft.accountId === editing?.accountId &&
-    accountChoices.some(
-      (row) => row.id === draft.accountId && !!row.archivedAt
-    );
-  function selectCategory(id: string, items: Category[]) {
-    setChoices(items);
-    setDraft((previous) =>
-      previous ? { ...previous, categoryId: id } : previous
-    );
-    setPicker(null);
-  }
-  function selectAccount(id: string, items: Account[]) {
-    accountRevision.current++;
-    setAccountChoices(items);
-    setAccountsReady(true);
-    setAccountError(null);
-    setDraft((previous) =>
-      previous ? { ...previous, accountId: id } : previous
-    );
-    setPicker(null);
   }
   const disabled =
     busy || uncertain || !ready || !preferencesReady || !accountsReady;
@@ -495,7 +317,6 @@ export function useTransactionManagement({
     rows,
     highlightedId,
     choices,
-    accountChoices,
     accountsReady,
     accountError,
     refreshAccounts,
@@ -505,10 +326,6 @@ export function useTransactionManagement({
     filter,
     setFilter,
     applied,
-    draft,
-    setDraft,
-    editing,
-    setEditing,
     deleting,
     setDeleting,
     busy,
@@ -516,25 +333,13 @@ export function useTransactionManagement({
     error,
     notice,
     uncertain,
-    setUncertain,
     reviewed,
     retryFilter,
     loadingMore,
     deleted,
     disabled,
-    draftCurrencyMismatch,
-    draftAccountUnavailable,
-    draftCategoryUnavailable,
-    draftHistoricalCategory,
-    draftHistoricalAccount,
-    picker,
-    setPicker,
-    selectCategory,
-    selectAccount,
     load,
-    mutate,
-    edit,
-    setError,
-    pendingCreate
+    remove,
+    acknowledgeDelete
   };
 }

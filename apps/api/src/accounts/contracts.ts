@@ -2,12 +2,8 @@ import { z } from "zod";
 import { financeName } from "../finance/names.js";
 import { calendarDate, currencySchema } from "../transactions/contracts.js";
 
-export const accountType = z.enum(["cash", "bank", "credit", "other"]);
-export const openingBalanceMinor = z
-  .number()
-  .int()
-  .min(-2147483647)
-  .max(2147483647);
+const accountType = z.enum(["cash", "bank", "credit", "other"]);
+const openingBalanceMinor = z.number().int().min(-2147483647).max(2147483647);
 export const accountInput = z.strictObject({
   name: financeName,
   type: accountType,

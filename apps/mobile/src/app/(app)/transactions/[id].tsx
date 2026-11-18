@@ -63,7 +63,6 @@ function TransactionDetailScreen() {
           defaultAccountId={defaultAccountId}
           accounts={accounts}
           active={active}
-          onAccountSettings={openDraftSettings}
           onCurrencySettings={openDraftSettings}
           preferencesReady={
             currencyState.status === "ready" &&

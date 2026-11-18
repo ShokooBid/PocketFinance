@@ -11,7 +11,7 @@ import type {
   CategoryQuery
 } from "./contracts.js";
 
-export const serializeCategory = (row: Category) => ({
+const serializeCategory = (row: Category) => ({
   id: row.id,
   name: row.name,
   parentId: row.parentId,

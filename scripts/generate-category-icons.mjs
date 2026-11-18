@@ -1,7 +1,5 @@
-import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import process from "node:process";
 import { fileURLToPath, URL } from "node:url";
 import { format, resolveConfig } from "prettier";
 import { defaultCategoryCatalog } from "../apps/api/src/categories/catalog.v1.ts";
@@ -67,27 +65,6 @@ await writeFile(
   )
 );
 
-// This one-time trusted catalog upgrade is separate from normal provisioning,
-// which intentionally preserves existing default rows verbatim.
-if (process.argv.includes("--migration")) {
-  const migration = new URL(
-    "../apps/api/prisma/migrations/20261030040000_category_icons/migration.sql",
-    import.meta.url
-  );
-  if (existsSync(migration))
-    throw new Error("Refusing to overwrite an existing migration.");
-  const quote = (value) => `'${value.replaceAll("'", "''")}'`;
-  const values = Object.entries(registry)
-    .map(
-      ([iconKey, asset]) => `  (${quote(asset.defaultKey)}, ${quote(iconKey)})`
-    )
-    .join(",\n");
-  await mkdir(new URL(".", migration), { recursive: true });
-  await writeFile(
-    migration,
-    `-- Trusted, versioned catalog presentation update. No filesystem paths in DB.\nBEGIN;\n-- Hold the table lock until the immutable-default guard is enabled again.\nLOCK TABLE "Category" IN ACCESS EXCLUSIVE MODE;\nALTER TABLE "Category" DISABLE TRIGGER "Category_hierarchy";\nWITH icons(default_key, icon_key) AS (VALUES\n${values}\n)\nUPDATE "Category" c SET "iconKey" = icons.icon_key\nFROM icons WHERE c."isDefault" AND c."defaultKey" = icons.default_key\n  AND c."iconKey" IS DISTINCT FROM icons.icon_key;\nALTER TABLE "Category" ENABLE TRIGGER "Category_hierarchy";\nCOMMIT;\n`
-  );
-}
 console.info(
   `Generated ${Object.keys(registry).length} bundled category icon mappings.`
 );

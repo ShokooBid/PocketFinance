@@ -9,7 +9,7 @@ import {
 
 const kindSchema = z.enum(["transaction", "transfer"]);
 const uuid = z.uuid().transform((value) => value.toLowerCase());
-export const historyCursor = z
+const historyCursor = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}_[0-9a-f-]{36}_(transaction|transfer)$/)
   .refine(
@@ -17,7 +17,7 @@ export const historyCursor = z
       calendarDate.safeParse(key.slice(0, 10)).success &&
       z.uuid().safeParse(key.slice(11, 47)).success
   );
-export const historyFilters = z.object({
+const historyFilters = z.object({
   from: calendarDate.optional(),
   to: calendarDate.optional(),
   accountId: uuid.optional(),
@@ -26,7 +26,7 @@ export const historyFilters = z.object({
   categoryId: uuid.optional(),
   includeSubcategories: z.boolean().optional()
 });
-export const historyRow = z
+const historyRow = z
   .object({
     kind: kindSchema,
     id: z.uuid(),
@@ -58,7 +58,7 @@ const safeInteger = z
   .int()
   .min(-Number.MAX_SAFE_INTEGER)
   .max(Number.MAX_SAFE_INTEGER);
-export const historyDay = z
+const historyDay = z
   .object({
     date: calendarDate,
     currency: currencySchema,
@@ -72,7 +72,7 @@ export const historyDay = z
       BigInt(day.netMinor) ===
       BigInt(day.incomeMinor) - BigInt(day.expensesMinor)
   );
-export const historyPage = z.object({
+const historyPage = z.object({
   items: z.array(historyRow).max(100),
   days: z.array(historyDay).max(700),
   nextCursor: historyCursor.nullable(),
@@ -85,7 +85,6 @@ export const historyFocus = z.object({ id: uuid, kind: kindSchema });
 export type HistoryFocus = z.infer<typeof historyFocus>;
 export type HistoryFilters = z.infer<typeof historyFilters>;
 export type HistoryRow = z.infer<typeof historyRow>;
-export type HistoryDay = z.infer<typeof historyDay>;
 export type HistoryPage = z.infer<typeof historyPage>;
 export type HistoryPosition = {
   after?: string;
@@ -111,7 +110,7 @@ export function validHistoryFilters(filter: HistoryFilters) {
         Date.parse(filter.to) - Date.parse(filter.from) <= 366 * 86400000))
   );
 }
-export function matchesHistory(row: HistoryRow, filter: HistoryFilters) {
+function matchesHistory(row: HistoryRow, filter: HistoryFilters) {
   return (
     (!filter.from || row.date >= filter.from) &&
     (!filter.to || row.date <= filter.to) &&

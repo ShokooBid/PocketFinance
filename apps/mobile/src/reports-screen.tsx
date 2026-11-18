@@ -303,20 +303,18 @@ function Values({
   );
 }
 
-export function ReportIcon({
+function ReportIcon({
   kind,
   color = theme.color.primary,
   size = 24
 }: {
-  kind: "reports" | "charts" | "calendar" | "up" | "down";
+  kind: "reports" | "charts" | "up" | "down";
   color?: string;
   size?: number;
 }) {
   const paths = {
     reports: "M5 15v5m7-11v11m7-17v17",
     charts: "M12 3v9h9M9 4a9 9 0 1 0 11 11M15 2v7h7a9 9 0 0 0-7-7Z",
-    calendar:
-      "M5 3v4m14-4v4M3 10h18M4 5h16a1 1 0 0 1 1 1v14H3V6a1 1 0 0 1 1-1Z",
     up: "m5 15 7-7 7 7",
     down: "m5 9 7 7 7-7"
   };

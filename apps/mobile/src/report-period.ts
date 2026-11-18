@@ -1,7 +1,7 @@
 import { adjacentMonth, currentMonth, monthRange } from "./dashboard-data";
 import { validDateFilter } from "./transaction-data";
 
-export type ReportRange = { from: string; to: string };
+type ReportRange = { from: string; to: string };
 
 export function initialReportRange(now = new Date()): ReportRange {
   return monthRange(currentMonth(now));

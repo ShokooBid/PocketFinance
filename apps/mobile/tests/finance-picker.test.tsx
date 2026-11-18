@@ -13,8 +13,6 @@ import {
   type Category,
   type CategorySource
 } from "../src/category-data";
-import { TransactionManagement } from "../src/transaction-management";
-import { createDemoTransactionSource } from "../src/transaction-data";
 import { accounts, accountId, deferred } from "./auth-fixtures";
 import type { Account } from "../src/account-data";
 
@@ -485,69 +483,6 @@ describe("account picker", () => {
     });
     expect(onSelect).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
-  });
-});
-
-it("preserves every other draft field through picker cancellation, creation and account selection", async () => {
-  const { source: categories } = fixture();
-  const source = createDemoTransactionSource(categories, accounts);
-  render(
-    <TransactionManagement
-      source={source}
-      categories={categories}
-      accounts={accounts}
-      defaultCurrency="CAD"
-      initialCreate={{ date: "2026-11-01", currency: "CAD" }}
-      demo
-    />
-  );
-  await waitFor(() =>
-    expect(
-      screen.getByRole("button", { name: "Save transaction" })
-    ).toBeEnabled()
-  );
-  await press("Income");
-  await field("Amount", "12.34");
-  await field("Note (optional)", "Keep my draft");
-  await press("Choose category");
-  await screen.findByLabelText("Search categories");
-  expect(screen.queryByLabelText("Amount")).toBeNull();
-  await press("Cancel selection");
-  expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
-  await press("Choose category");
-  await press("Add personal category");
-  await field("Category name", "New category");
-  await press("Create and select category");
-  expect(
-    screen.getByRole("button", {
-      name: "Category: New category",
-      selected: true
-    })
-  ).toBeVisible();
-  await press("Choose account");
-  await press("Account: Test CAD");
-  expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
-  expect(
-    screen.getByRole("button", { name: "Choose transaction date" })
-  ).toHaveProp("accessibilityHint", "2026-11-01");
-  expect(screen.getByLabelText("Note (optional)")).toHaveProp(
-    "value",
-    "Keep my draft"
-  );
-  expect(screen.getByText("Currency: CAD")).toBeVisible();
-  expect(
-    screen.getByRole("button", { name: "Income", selected: true })
-  ).toBeVisible();
-  await press("Save transaction");
-  await screen.findByText(/Transaction saved/);
-  expect((await source.list({})).items[0]).toMatchObject({
-    amountMinor: 1234,
-    direction: "income",
-    currency: "CAD",
-    date: "2026-11-01",
-    categoryId: "returned-root",
-    accountId: accountId("CAD"),
-    note: "Keep my draft"
   });
 });
 
