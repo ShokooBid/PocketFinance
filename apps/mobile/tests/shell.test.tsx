@@ -80,7 +80,14 @@ async function openSettings() {
 }
 
 async function chooseCategory(label: string) {
-  await press("Choose category");
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: /^Category: / })).toBeEnabled()
+  );
+  if (
+    screen.queryByRole("button", { name: `Category: ${label}`, selected: true })
+  )
+    return;
+  await tap(screen.getByRole("button", { name: /^Category: / }));
   await field("Search categories", label);
   await press(`Category: ${label}`);
   await press(`Use this category: ${label}`);
@@ -225,12 +232,12 @@ describe("session navigation", () => {
     await field("Note (optional)", "Keep my draft");
     await chooseTransactionDate("2026-11-01");
 
-    await press("Choose category");
+    await press("Category: Income");
     await screen.findByLabelText("Search categories");
     expect(screen.queryByLabelText("Amount")).toBeNull();
     await press("Cancel selection");
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
-    await press("Choose category");
+    await press("Category: Income");
     await press("Add personal category");
     await field("Category name", "New category");
     await press("Create and select category");
@@ -603,6 +610,8 @@ describe("session navigation", () => {
           rootCategoryBreakdown: [],
           recentTransactions: []
         });
+      if (path === "/v1/categories/last-used")
+        return response({ categoryId: null });
       if (path === "/v1/categories/recent")
         return response({
           items: owner.id === alice.id ? [{ ...category, parent: null }] : []

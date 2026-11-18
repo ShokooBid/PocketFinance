@@ -10,9 +10,9 @@ import {
 import {
   categoryPath,
   orderedCategories,
-  selectableCategory
+  selectableEntryCategory
 } from "./category-hierarchy";
-import type { Currency } from "./transaction-data";
+import type { Currency, Transaction } from "./transaction-data";
 import { ClientFailure } from "./auth/transport";
 
 // Each modal owns one serialized request lifecycle. Closing it invalidates every
@@ -61,7 +61,8 @@ export type CategoryPickerSource = CategoryReadSource &
 export function useCategoryPicker(
   source: CategoryPickerSource,
   onSelect: (id: string, rows: Category[]) => void,
-  mode: "entry" | "filter" = "entry"
+  mode: "entry" | "filter" = "entry",
+  direction?: Transaction["direction"]
 ) {
   const task = usePickerTask(categoryFailureMessage);
   const [rows, setRows] = useState<Category[] | null>(null);
@@ -95,7 +96,8 @@ export function useCategoryPicker(
     void reload();
   }, [reload]);
   const active = orderedCategories(rows ?? []).filter(
-    (row) => mode === "filter" || selectableCategory(row, rows ?? [])
+    (row) =>
+      mode === "filter" || selectableEntryCategory(row, rows ?? [], direction)
   );
   const root = active.find((row) => row.id === rootId);
   const search = query.trim().toLocaleLowerCase();
@@ -116,7 +118,10 @@ export function useCategoryPicker(
       if (!current()) return;
       setRows(fresh);
       const row = fresh.find((row) => row.id === id);
-      if (!row || (mode === "entry" && !selectableCategory(row, fresh)))
+      if (
+        !row ||
+        (mode === "entry" && !selectableEntryCategory(row, fresh, direction))
+      )
         throw new CategoryFailure("unavailable");
       onSelect(row.id, fresh);
     });
@@ -154,7 +159,7 @@ export function useCategoryPicker(
       if (!current()) return;
       setRows(fresh);
       const row = fresh.find((row) => row.id === id);
-      if (!row || !selectableCategory(row, fresh))
+      if (!row || !selectableEntryCategory(row, fresh, direction))
         throw new CategoryFailure("unavailable");
       onSelect(id, fresh);
     });

@@ -655,10 +655,11 @@ export function TransactionEntry() {
           }}
         />
       )}
-      {picker === "category" && (
+      {picker === "category" && entry.draft.direction !== "transfer" && (
         <CategoryPicker
           source={categorySource}
           selectedId={entry.draft.categoryId}
+          direction={entry.draft.direction}
           onClose={() => setPicker(null)}
           onSelect={(id, rows) => {
             entry.selectCategory(id, rows);

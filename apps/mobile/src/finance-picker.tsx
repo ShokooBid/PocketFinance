@@ -177,6 +177,7 @@ export function CategoryPicker({
   onSelect,
   onClose,
   mode = "entry",
+  direction,
   onClear
 }: {
   source: CategoryPickerSource;
@@ -184,6 +185,7 @@ export function CategoryPicker({
   onSelect: (id: string, rows: Category[]) => void;
   onClose: () => void;
   mode?: "entry" | "filter";
+  direction?: "income" | "expense";
   onClear?: () => void;
 }) {
   const state = useCategoryPicker(
@@ -192,7 +194,8 @@ export function CategoryPicker({
       Keyboard.dismiss();
       onSelect(id, rows);
     },
-    mode
+    mode,
+    direction
   );
   const { rows, busy, error, root, editor } = state;
   function back() {

@@ -79,6 +79,23 @@ export function registerCategoryRoutes(
     (request) => service.recent(request.principal!.userId, request.query.limit)
   );
   app.get(
+    `${base}/last-used`,
+    {
+      onRequest: app.authenticate,
+      schema: {
+        ...secured,
+        description:
+          "The category on the user's most recently saved non-transfer posting. Returns null if none is assigned. Archived selections are returned so clients can apply their own fallback.",
+        querystring: empty,
+        response: {
+          ...errors,
+          200: z.object({ categoryId: z.uuid().nullable() })
+        }
+      }
+    },
+    (request) => service.lastUsed(request.principal!.userId)
+  );
+  app.get(
     `${base}/:id`,
     {
       onRequest: app.authenticate,

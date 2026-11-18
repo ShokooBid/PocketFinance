@@ -483,6 +483,7 @@ describe("authenticated mobile category flow", () => {
         ...input,
         clientRequestId: randomUUID()
       });
+      expect(await d.source().lastUsedCategoryId()).toBe(category.id);
       expect(row.amountMinor).toBe(
         exponent === 3 ? 1001 : exponent === 2 ? 101 : 1
       );
@@ -504,6 +505,7 @@ describe("authenticated mobile category flow", () => {
         (await source.update(row.id, { ...input, amountMinor: 2 })).amountMinor
       ).toBe(2);
       await source.remove(row.id);
+      expect(await d.source().lastUsedCategoryId()).toBeNull();
       expect((await source.list({})).items).toEqual([]);
       await d.controller.logout();
       await expect(source.list({})).rejects.toMatchObject({

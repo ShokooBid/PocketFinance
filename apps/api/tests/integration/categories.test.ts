@@ -81,6 +81,7 @@ describe("two-level owned category hierarchy", () => {
     for (const [method, url, payload] of [
       ["GET", base, undefined],
       ["GET", `${base}/recent`, undefined],
+      ["GET", `${base}/last-used`, undefined],
       ["GET", `${base}/${randomUUID()}`, undefined],
       ["POST", base, { name: "" }],
       ["PATCH", `${base}/${randomUUID()}`, {}],
@@ -427,6 +428,26 @@ describe("two-level owned category hierarchy", () => {
       (await app.inject({ url: `${base}/recent?limit=21`, headers: headers() }))
         .statusCode
     ).toBe(422);
+  });
+  it("returns the owner's last saved category across edits and archival", async () => {
+    const first = await create("First save selection");
+    const parent = await create("Last save parent");
+    const child = await create("Last save selection", parent.id);
+    const before = await posting(first.id);
+    await posting(child.id);
+    const lastUsed = () =>
+      app.inject({ url: `${base}/last-used`, headers: headers() });
+    expect((await lastUsed()).json()).toEqual({ categoryId: child.id });
+    await transactions.update(alice.id, before.id, { note: "Edited latest" });
+    expect((await lastUsed()).json()).toEqual({ categoryId: first.id });
+    await categories.archive(alice.id, first.id);
+    expect((await lastUsed()).json()).toEqual({ categoryId: first.id });
+    const otherOwner = await app.inject({
+      url: `${base}/last-used`,
+      headers: { authorization: `Bearer ${bob.token}` }
+    });
+    expect(otherOwner.statusCode).toBe(200);
+    expect(otherOwner.json()).toEqual({ categoryId: null });
   });
   it("preserves exact filters and separately rolls direct-root/child postings up once", async () => {
     const root = await create("Rollup root");

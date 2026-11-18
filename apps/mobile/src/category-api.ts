@@ -78,6 +78,14 @@ export function createApiCategorySource(client: Transport): CategorySource {
       );
       return result.items;
     },
+    async lastUsedCategoryId() {
+      const result = await client.send(
+        "GET",
+        `${base}/last-used`,
+        z.object({ categoryId: z.uuid().nullable() })
+      );
+      return result.categoryId;
+    },
     create: async (name) => (await mutate("POST", base, { name })).id,
     createChild: async (name: string, parentId: string) =>
       (await mutate("POST", base, { name, parentId })).id,

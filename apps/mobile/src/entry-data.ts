@@ -1,6 +1,9 @@
 import type { Account } from "./account-data";
 import type { Category } from "./category-data";
-import { selectableCategory } from "./category-hierarchy";
+import {
+  orderedCategories,
+  selectableEntryCategory
+} from "./category-hierarchy";
 import { transferInput } from "./transfer-data";
 import {
   calendarDate,
@@ -32,6 +35,25 @@ export function freshEntry(currency: Currency, accountId = ""): EntryDraft {
     date: localDate(),
     note: ""
   };
+}
+
+export function defaultEntryCategory(
+  draft: EntryDraft,
+  rows: Category[],
+  lastUsedId: string | null
+) {
+  const direction = draft.direction;
+  if (direction === "transfer") return "";
+  // A manual pick that becomes unavailable needs review at save time.
+  if (draft.categoryId) return draft.categoryId;
+  const lastUsed = rows.find((row) => row.id === lastUsedId);
+  if (lastUsed && selectableEntryCategory(lastUsed, rows, direction))
+    return lastUsed.id;
+  return (
+    orderedCategories(rows).find((row) =>
+      selectableEntryCategory(row, rows, direction)
+    )?.id ?? ""
+  );
 }
 
 // Text while editing, integer minor units only at submission. A trailing dot is
@@ -88,8 +110,12 @@ export function entryErrors(
         "Choose a To account in the same currency. No conversion occurs.";
   } else {
     const category = categories.find((row) => row.id === draft.categoryId);
-    if (!category || !selectableCategory(category, categories))
-      errors.categoryId = "Choose an active category or subcategory.";
+    if (
+      !category ||
+      !selectableEntryCategory(category, categories, draft.direction)
+    )
+      errors.categoryId =
+        "Choose an active category or subcategory for this transaction type.";
   }
   if (!calendarDate.safeParse(draft.date).success)
     errors.date = "Choose a real calendar date.";

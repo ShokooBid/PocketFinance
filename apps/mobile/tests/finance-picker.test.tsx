@@ -10,6 +10,7 @@ import { Modal } from "react-native";
 import { AccountPicker, CategoryPicker } from "../src/finance-picker";
 import {
   CategoryFailure,
+  createDemoCategorySource,
   type Category,
   type CategorySource
 } from "../src/category-data";
@@ -36,6 +37,7 @@ function fixture() {
   ];
   const source: CategorySource = {
     hierarchy: true,
+    lastUsedCategoryId: async () => null,
     list: jest
       .fn<CategorySource["list"]>()
       .mockImplementation(async () => rows.map((row) => ({ ...row }))),
@@ -95,6 +97,65 @@ async function openCategory(source: CategorySource, selectedId = "") {
 }
 
 describe("category picker", () => {
+  it.each(["income", "expense"] as const)(
+    "shows subcategories only when their parent is eligible in %s",
+    async (direction) => {
+      const source = createDemoCategorySource();
+      const rows = await source.list();
+      const income = rows.find((row) => row.defaultKey === "income")!;
+      const food = rows.find((row) => row.defaultKey === "food-drinks")!;
+      const included = direction === "income" ? income : food;
+      const excluded = direction === "income" ? food : income;
+      const child = await source.createChild!("Eligible child", included.id);
+      const hiddenChild = await source.createChild!(
+        "Hidden child",
+        excluded.id
+      );
+      source.recordPosting?.("used-hidden-child", hiddenChild);
+      const personal = await source.create("Personal root");
+      await source.createChild!("Shared child", personal);
+      const onSelect = jest.fn();
+      render(
+        <CategoryPicker
+          source={source}
+          selectedId=""
+          onSelect={onSelect}
+          onClose={() => {}}
+          direction={direction}
+        />
+      );
+      expect(
+        await screen.findByRole("button", {
+          name: `Category: ${included.name}`
+        })
+      ).toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: `Category: ${excluded.name}` })
+      ).toBeNull();
+      expect(screen.queryByRole("button", { name: /Hidden child/ })).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Category: Personal root" })
+      ).toBeVisible();
+      await field(
+        "Search categories",
+        direction === "income" ? "Groceries" : "Checks"
+      );
+      expect(await screen.findByText("No matching categories")).toBeVisible();
+      await field("Search categories", "Hidden child");
+      expect(screen.getByText("No matching categories")).toBeVisible();
+      await field("Search categories", "Shared child");
+      expect(
+        screen.getByRole("button", {
+          name: "Category: Personal root / Shared child"
+        })
+      ).toBeVisible();
+      await field("Search categories", "");
+      await press(`Category: ${included.name}`);
+      await press(`Category: ${included.name} / Eligible child`);
+      expect(onSelect).toHaveBeenCalledWith(child, expect.any(Array));
+    }
+  );
+
   it("shows only four active recent categories in recency order and selects a shortcut", async () => {
     const f = fixture();
     const children = Array.from({ length: 7 }, (_, index) =>
