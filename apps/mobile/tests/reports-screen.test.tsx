@@ -14,6 +14,7 @@ import {
   waitFor,
   within
 } from "@testing-library/react-native";
+import { Dimensions, StyleSheet } from "react-native";
 import DateTimePicker from "react-native-ui-datepicker";
 import { ReportsScreen } from "../src/reports-screen";
 import type { Report, ReportSource } from "../src/report-data";
@@ -21,40 +22,34 @@ import { deferred } from "./auth-fixtures";
 
 const fixture: Report = {
   income: {
-    current: 10000,
-    previous: 5000,
+    totalMinor: 10000,
     rows: [
       {
         id: "salary",
         name: "Salary",
-        current: 10000,
-        previous: 5000,
+        amountMinor: 10000,
         children: []
       }
     ]
   },
   expenses: {
-    current: 3000,
-    previous: 6000,
+    totalMinor: 3000,
     rows: [
       {
         id: "food",
         name: "Food & Drinks",
-        current: 3000,
-        previous: 6000,
+        amountMinor: 3000,
         children: [
           {
             id: "direct",
             name: "General · Food & Drinks",
-            current: 1000,
-            previous: 0,
+            amountMinor: 1000,
             children: []
           },
           {
             id: "groceries",
             name: "Groceries",
-            current: 2000,
-            previous: 6000,
+            amountMinor: 2000,
             children: []
           }
         ]
@@ -118,9 +113,11 @@ describe("Overview Reports", () => {
     expect(
       screen.queryByRole("button", { name: /^(From|To) date:/ })
     ).toBeNull();
-    expect(
-      await screen.findByRole("header", { name: /Expenses\. USD -30.00/ })
-    ).toBeVisible();
+    const heading = await screen.findByRole("header", {
+      name: "Expenses. USD -30.00."
+    });
+    expect(within(heading).getByText("Expenses")).toBeVisible();
+    expect(within(heading).getByText("USD -30.00")).toBeVisible();
     expect(screen.queryByText("Groceries")).toBeNull();
     await press(/^Food & Drinks\./);
     expect(
@@ -128,9 +125,63 @@ describe("Overview Reports", () => {
     ).toBeVisible();
     expect(screen.getByText("Groceries")).toBeVisible();
     expect(screen.getByText("General · Food & Drinks")).toBeVisible();
+    expect(
+      screen.getByLabelText("General · Food & Drinks. USD -10.00.")
+    ).toBeVisible();
+    expect(screen.queryByText(/%|^—$/)).toBeNull();
     await press(/^Food & Drinks\./);
     expect(screen.queryByText("Groceries")).toBeNull();
     expect(h.load).toHaveBeenCalledTimes(1);
+  });
+  it("keeps full labels and moves totals below them when space is tight", async () => {
+    const original = {
+      window: Dimensions.get("window"),
+      screen: Dimensions.get("screen")
+    };
+    Dimensions.set({
+      window: { width: 390, height: 800, scale: 1, fontScale: 1 }
+    });
+    try {
+      const h = harness();
+      const row = fixture.expenses.rows[0]!;
+      const label = "Groceries and household essentials";
+      h.load.mockResolvedValue({
+        ...fixture,
+        expenses: {
+          ...fixture.expenses,
+          rows: [
+            {
+              ...row,
+              children: row.children.map((child) =>
+                child.id === "groceries" ? { ...child, name: label } : child
+              )
+            }
+          ]
+        }
+      });
+      render(<ReportsScreen source={h.source} currency="CAD" />);
+      const options = { name: "Expenses. CAD -30.00." };
+      const heading = await screen.findByRole("header", options);
+      expect(StyleSheet.flatten(heading.props.style)).toMatchObject({
+        flexDirection: "row"
+      });
+
+      act(() =>
+        Dimensions.set({
+          window: { width: 320, height: 800, scale: 1, fontScale: 1.5 }
+        })
+      );
+      expect(
+        StyleSheet.flatten(screen.getByRole("header", options).props.style)
+      ).toMatchObject({ flexDirection: "column" });
+      await press(/^Food & Drinks\./);
+      const child = screen.getByLabelText(`${label}. CAD -20.00.`);
+      expect(within(child).getByText(label)).toBeVisible();
+      expect(within(child).getByText("CAD -20.00")).toBeVisible();
+      expect(h.load).toHaveBeenCalledTimes(1);
+    } finally {
+      act(() => Dimensions.set(original));
+    }
   });
   it("uses History's calendar Apply/Clear actions, discards dismissed drafts and applies a single day", async () => {
     const h = harness();
@@ -246,7 +297,7 @@ describe("Overview Reports", () => {
     const other = harness();
     other.load.mockResolvedValue({
       ...fixture,
-      income: { current: 0, previous: 0, rows: [] }
+      income: { totalMinor: 0, rows: [] }
     });
     view.rerender(<ReportsScreen source={other.source} currency="JPY" />);
     await screen.findByRole("header", { name: /Income\. JPY 0\./ });
@@ -260,27 +311,23 @@ describe("Overview Reports", () => {
     h.load.mockResolvedValue({
       ...fixture,
       income: {
-        current: 0,
-        previous: 0,
+        totalMinor: 0,
         rows: [
           {
             id: "uncategorized",
             name: "Uncategorized income",
-            current: 0,
-            previous: 0,
+            amountMinor: 0,
             children: []
           }
         ]
       },
       expenses: {
-        current: 0,
-        previous: 0,
+        totalMinor: 0,
         rows: [
           {
             id: "uncategorized",
             name: "Uncategorized expenses",
-            current: 0,
-            previous: 0,
+            amountMinor: 0,
             children: []
           }
         ]
@@ -302,9 +349,8 @@ describe("Overview Reports", () => {
     h.load.mockResolvedValue({
       ...fixture,
       income: {
-        current: 0,
-        previous: 5000,
-        rows: fixture.income.rows.map((row) => ({ ...row, current: 0 }))
+        totalMinor: 0,
+        rows: fixture.income.rows.map((row) => ({ ...row, amountMinor: 0 }))
       }
     });
     render(<ReportsScreen source={h.source} currency="CAD" />);

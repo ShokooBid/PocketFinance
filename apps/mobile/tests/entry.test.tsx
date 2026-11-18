@@ -108,38 +108,56 @@ async function fillEntry(entry: Awaited<ReturnType<typeof openEntry>>) {
 }
 
 describe("shared transaction editing", () => {
-  it("updates the selected ID, then restores a pristine Add draft", async () => {
-    const entry = await openEntry();
-    await fillEntry(entry);
-    await act(async () => {
-      await entry.result.current.save();
-    });
-    const first = entry.result.current.saved;
-    expect(first).toMatchObject({ kind: "transaction" });
-    const id = first!.id;
-    const priorAdd = entry.result.current.draft;
-    const current = await source.get(id);
-    act(() => {
-      entry.result.current.consumeSaved();
-      entry.result.current.editTransaction(current, () => {});
-    });
-    expect(entry.result.current.editingTransaction?.id).toBe(id);
-    act(() => entry.result.current.change({ amount: "15.00" }));
-    const update = jest.spyOn(source, "update");
-    const create = jest.spyOn(source, "create");
-    await act(async () => {
-      await entry.result.current.save();
-    });
-    expect(update).toHaveBeenCalledWith(
-      id,
-      expect.objectContaining({ amountMinor: 1500 })
-    );
-    expect(create).not.toHaveBeenCalled();
-    expect((await source.get(id)).amountMinor).toBe(1500);
-    expect(entry.result.current.saved).toEqual({ id, kind: "transaction" });
-    expect(entry.result.current.editingTransaction).toBeNull();
-    expect(entry.result.current.draft).toEqual(priorAdd);
-  });
+  it.each([false, true])(
+    "restores Add after saving (dirty=%s)",
+    async (dirty) => {
+      const entry = await openEntry();
+      await fillEntry(entry);
+      await act(async () => {
+        await entry.result.current.save();
+      });
+      const first = entry.result.current.saved;
+      expect(first).toMatchObject({ kind: "transaction" });
+      const id = first!.id;
+      if (dirty) {
+        const shopping = (await categories.list()).find(
+          (row) => row.defaultKey === "shopping"
+        )!;
+        act(() =>
+          entry.result.current.change({
+            amount: "24.00",
+            note: "Unfinished new entry",
+            categoryId: shopping.id,
+            date: "2026-11-10"
+          })
+        );
+      }
+      const priorAdd = entry.result.current.draft;
+      const current = await source.get(id);
+      act(() => {
+        entry.result.current.consumeSaved();
+        entry.result.current.editTransaction(current, () => {});
+      });
+      expect(entry.result.current.editingTransaction?.id).toBe(id);
+      expect(entry.result.current.leaving).toBeNull();
+      act(() => entry.result.current.change({ amount: "15.00" }));
+      const update = jest.spyOn(source, "update");
+      const create = jest.spyOn(source, "create");
+      await act(async () => {
+        await entry.result.current.save();
+      });
+      expect(update).toHaveBeenCalledWith(
+        id,
+        expect.objectContaining({ amountMinor: 1500 })
+      );
+      expect(create).not.toHaveBeenCalled();
+      expect((await source.get(id)).amountMinor).toBe(1500);
+      expect(entry.result.current.saved).toEqual({ id, kind: "transaction" });
+      expect(entry.result.current.editingTransaction).toBeNull();
+      expect(entry.result.current.draft).toEqual(priorAdd);
+      expect(entry.result.current.dirty).toBe(dirty);
+    }
+  );
 });
 
 describe("entry category defaults", () => {
@@ -248,8 +266,7 @@ describe("entry category defaults", () => {
       entry.result.current.selectCategory(shopping.id, rows);
       entry.result.current.cancelEditing(() => {});
     });
-    act(() => entry.result.current.leaving?.action());
-    act(() => entry.result.current.setLeaving(null));
+    expect(entry.result.current.leaving).toBeNull();
     expect(entry.result.current.draft.categoryId).toBe(groceries.id);
     expect(await categories.lastUsedCategoryId()).toBe(groceries.id);
 

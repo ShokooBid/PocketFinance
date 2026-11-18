@@ -5,7 +5,10 @@ import {
   transactionQuery
 } from "../src/transactions/contracts.js";
 import { createAccountService } from "../src/accounts/service.js";
-import { transactionCreationFingerprint } from "../src/transactions/service.js";
+import {
+  createTransactionService,
+  transactionCreationFingerprint
+} from "../src/transactions/service.js";
 import type { PrismaClient } from "../src/generated/prisma/client.js";
 
 const input = {
@@ -106,6 +109,60 @@ describe("canonical transaction creation fingerprint", () => {
       expect(
         transactionCreationFingerprint({ ...original, ...change })
       ).not.toBe(fingerprint);
+  });
+});
+
+describe("transaction creation", () => {
+  it("uses the verified account currency when the insert returns only transaction fields", async () => {
+    const ownerId = "40000000-0000-4000-8000-000000000001";
+    const request = transactionCreate.parse(input);
+    const id = "50000000-0000-4000-8000-000000000001";
+    const timestamp = new Date("2026-11-03T12:00:00.000Z");
+    const inserted = {
+      ...request,
+      id,
+      date: new Date(request.date),
+      transferId: null,
+      importId: null,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: ownerId }]),
+      category: {
+        findFirst: vi.fn().mockResolvedValue({ archivedAt: null, parent: null })
+      },
+      account: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: request.accountId,
+          currency: "CAD",
+          openingDate: new Date("2026-11-01"),
+          archivedAt: null
+        })
+      },
+      financePreferences: {
+        findUnique: vi.fn().mockResolvedValue({ entryCurrency: "CAD" })
+      },
+      transaction: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn(async ({ include }: { include?: unknown }) =>
+          include ? null : inserted
+        )
+      }
+    };
+    const service = createTransactionService({
+      $transaction: (run: (tx: unknown) => unknown) => run(tx)
+    } as unknown as PrismaClient);
+
+    await expect(service.create(ownerId, request)).resolves.toMatchObject({
+      replayed: false,
+      resource: {
+        id,
+        accountId: request.accountId,
+        date: request.date,
+        currency: "CAD"
+      }
+    });
   });
 });
 

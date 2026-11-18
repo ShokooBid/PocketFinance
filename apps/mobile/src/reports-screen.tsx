@@ -10,8 +10,7 @@ import Svg, { Path } from "react-native-svg";
 import { CategoryIcon } from "./category-icon";
 import { RangeDateField } from "./date-picker";
 import { moneyLabel } from "./dashboard-data";
-import type { ReportRow, ReportSection, ReportSource } from "./report-data";
-import { changeDescription } from "./report-period";
+import type { ReportSection, ReportSource } from "./report-data";
 import { theme } from "./theme";
 import type { Currency } from "./transaction-data";
 import { StateNotice } from "./ui";
@@ -143,12 +142,15 @@ function ReportCard({
   onToggle: (id: string) => void;
   expense?: boolean;
 }) {
+  const formatAmount = (amountMinor: number) =>
+    moneyLabel(expense ? -amountMinor : amountMinor, currency);
+  const total = formatAmount(section.totalMinor);
   return (
     <View style={styles.card}>
       <View
         accessible
         accessibilityRole="header"
-        accessibilityLabel={`${title}. ${moneyLabel(expense ? -section.current : section.current, currency)}. ${changeDescription(section.current, section.previous, expense).description}`}
+        accessibilityLabel={`${title}. ${total}.`}
         style={[styles.row, styles.cardHeading, stacked && styles.stacked]}
       >
         <View style={styles.identity}>
@@ -162,16 +164,9 @@ function ReportCard({
           </View>
           <Text style={styles.heading}>{title}</Text>
         </View>
-        <Values
-          current={section.current}
-          previous={section.previous}
-          expense={expense}
-          currency={currency}
-          heading
-          stacked={stacked}
-        />
+        <ReportAmount amount={total} heading stacked={stacked} />
       </View>
-      {section.current === 0 ? (
+      {section.totalMinor === 0 ? (
         <Text style={styles.empty}>
           {expense
             ? "No expenses in this period."
@@ -181,38 +176,27 @@ function ReportCard({
         section.rows.map((row) => {
           const expansionKey = `${title}_${row.id}`;
           const open = expanded.has(expansionKey);
-          const label = `${row.name}. ${moneyLabel(expense ? -row.current : row.current, currency)}. ${changeDescription(row.current, row.previous, expense).description}`;
+          const amount = formatAmount(row.amountMinor);
+          const label = `${row.name}. ${amount}.`;
+          const expandable = row.children.length > 0;
           const contents = (
             <>
               <View style={styles.identity}>
                 <CategoryIcon iconKey={row.iconKey} size={32} />
-                <Text
-                  style={[
-                    styles.name,
-                    row.children.length > 0 && styles.parentName
-                  ]}
-                >
+                <Text style={[styles.name, expandable && styles.parentName]}>
                   {row.name}
                 </Text>
               </View>
-              <Values
-                {...row}
-                expense={expense}
-                currency={currency}
+              <ReportAmount
+                amount={amount}
                 stacked={stacked}
+                chevron={expandable ? (open ? "up" : "down") : undefined}
               />
-              {row.children.length > 0 && (
-                <View
-                  style={[styles.chevron, stacked && styles.stackedChevron]}
-                >
-                  <ReportIcon kind={open ? "up" : "down"} size={16} />
-                </View>
-              )}
             </>
           );
           return (
             <View key={row.id}>
-              {row.children.length ? (
+              {expandable ? (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={label}
@@ -233,28 +217,26 @@ function ReportCard({
                 </View>
               )}
               {open &&
-                row.children.map((child) => (
-                  <View
-                    key={child.id}
-                    accessible
-                    accessibilityLabel={`${child.name}. ${moneyLabel(expense ? -child.current : child.current, currency)}. ${changeDescription(child.current, child.previous, expense).description}`}
-                    style={[
-                      styles.row,
-                      styles.child,
-                      stacked && styles.stacked
-                    ]}
-                  >
-                    <View style={styles.identity}>
-                      <Text style={styles.childName}>{child.name}</Text>
+                row.children.map((child) => {
+                  const childAmount = formatAmount(child.amountMinor);
+                  return (
+                    <View
+                      key={child.id}
+                      accessible
+                      accessibilityLabel={`${child.name}. ${childAmount}.`}
+                      style={[
+                        styles.row,
+                        styles.child,
+                        stacked && styles.stacked
+                      ]}
+                    >
+                      <View style={styles.identity}>
+                        <Text style={styles.childName}>{child.name}</Text>
+                      </View>
+                      <ReportAmount amount={childAmount} stacked={stacked} />
                     </View>
-                    <Values
-                      {...child}
-                      expense={expense}
-                      currency={currency}
-                      stacked={stacked}
-                    />
-                  </View>
-                ))}
+                  );
+                })}
             </View>
           );
         })
@@ -263,42 +245,23 @@ function ReportCard({
   );
 }
 
-function Values({
-  current,
-  previous,
-  currency,
-  expense,
+function ReportAmount({
+  amount,
   heading = false,
-  stacked
-}: Pick<ReportRow, "current" | "previous"> & {
-  currency: Currency;
-  expense: boolean;
+  stacked,
+  chevron
+}: {
+  amount: string;
   heading?: boolean;
   stacked: boolean;
+  chevron?: "up" | "down" | undefined;
 }) {
-  const change = changeDescription(current, previous, expense);
   return (
-    <View style={[styles.values, stacked && styles.stackedValues]}>
-      <Text
-        style={[
-          styles.amount,
-          stacked && styles.fluidValue,
-          heading && styles.headingAmount
-        ]}
-      >
-        {moneyLabel(expense && current ? -current : current, currency)}
+    <View style={[styles.amountGroup, stacked && styles.stackedAmountGroup]}>
+      <Text style={[styles.amount, heading && styles.headingAmount]}>
+        {amount}
       </Text>
-      <Text
-        accessibilityLabel={change.description}
-        style={[
-          styles.change,
-          stacked && styles.fluidChange,
-          change.tone === "good" && styles.good,
-          change.tone === "bad" && styles.bad
-        ]}
-      >
-        {change.label}
-      </Text>
+      {chevron && <ReportIcon kind={chevron} size={16} />}
     </View>
   );
 }
@@ -383,8 +346,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     borderTopWidth: 1,
-    borderTopColor: theme.color.primarySoft,
-    paddingRight: 34
+    borderTopColor: theme.color.primarySoft
   },
   cardHeading: { backgroundColor: theme.color.primarySoft, borderTopWidth: 0 },
   identity: {
@@ -413,9 +375,15 @@ const styles = StyleSheet.create({
   expenseIcon: { backgroundColor: "#FFE1EA" },
   arrow: { color: "#167335", fontSize: 27, fontWeight: "700", lineHeight: 32 },
   expenseArrow: { color: "#BC2346" },
-  values: { flexDirection: "row", alignItems: "center", gap: 10 },
+  amountGroup: {
+    maxWidth: "55%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 8
+  },
   amount: {
-    width: 104,
+    flexShrink: 1,
     textAlign: "right",
     color: theme.color.text,
     fontSize: 14,
@@ -423,26 +391,8 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"]
   },
   headingAmount: { fontWeight: "800", fontSize: 15 },
-  fluidValue: { width: "auto", minWidth: 104, maxWidth: "100%" },
-  fluidChange: { width: "auto", minWidth: 56, maxWidth: "100%" },
-  change: {
-    width: 56,
-    textAlign: "right",
-    color: theme.color.muted,
-    fontSize: 14,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"]
-  },
-  good: { color: "#167335" },
-  bad: { color: "#BC2346" },
-  chevron: { position: "absolute", right: 10 },
   child: { marginLeft: 52, paddingLeft: 0, minHeight: 48 },
   childName: { color: theme.color.text, fontSize: 13, flex: 1 },
   stacked: { flexDirection: "column", alignItems: "stretch", gap: 10 },
-  stackedValues: {
-    marginLeft: 40,
-    justifyContent: "flex-end",
-    flexWrap: "wrap"
-  },
-  stackedChevron: { top: 18 }
+  stackedAmountGroup: { alignSelf: "flex-end", maxWidth: "100%" }
 });

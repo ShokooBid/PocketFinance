@@ -1,7 +1,6 @@
 import { accounts, accountId, requestId } from "./auth-fixtures";
 import { describe, expect, it, jest } from "@jest/globals";
 import {
-  adjacentMonth,
   currentMonth,
   monthRange,
   moneyLabel,
@@ -35,10 +34,6 @@ describe("dashboard calendar and money rules", () => {
     expect(monthRange("0001-02").to).toBe("0001-02-28");
     expect(monthRange("9999-12").to).toBe("9999-12-31");
     expect(monthRange("2026-04").to).toBe("2026-04-30");
-    expect(adjacentMonth("2026-01", -1)).toBe("2025-12");
-    expect(adjacentMonth("2026-12", 1)).toBe("2027-01");
-    expect(adjacentMonth("0001-01", -1)).toBeNull();
-    expect(adjacentMonth("9999-12", 1)).toBeNull();
     expect(currentMonth(new Date(2026, 0, 1))).toBe("2026-01");
     for (const month of [
       "0000-01",

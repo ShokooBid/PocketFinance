@@ -18,7 +18,7 @@ home in #72; the dashboard is now Overview behind the same setup gate.
 | ----------------------- | ------------------------------------------------------------------------------------- |
 | Add `/`                 | Income/expense/transfer draft; primary recording experience.                          |
 | History `/transactions` | Logical records and account/date/category filters.                                    |
-| Overview `/overview`    | Income/Expenses reports, category expansion and period comparisons.                   |
+| Overview `/overview`    | Income/Expenses reports, date filtering and category expansion.                       |
 | Settings `/settings`    | Currency, account management, category management, existing privacy/session controls. |
 
 Keep `/transactions/[id]`, `/categories`, `/import`, `/privacy` and `/settings`
@@ -81,6 +81,10 @@ eligible choice in the list. Edit starts with the saved category. A successful
 create or edit updates the last saved choice. Entry keeps that choice in memory
 for the app session. The next entry refresh after a deletion looks up the latest
 remaining choice.
+
+Editing a saved transaction opens its editor directly. Save and Cancel both
+return to History and restore any unfinished Add draft. Cancel drops only the
+changes made in the editor.
 
 ## Category picker and management
 
@@ -180,10 +184,9 @@ account balances, History and Overview.
 History and Reports use the same single date range selector (`RangeDateField`),
 showing the applied range or All dates. It opens one shared calendar with compact
 Clear and Apply buttons inside the calendar surface. There are no separate From/To
-controls, month-navigation toolbar, or external Apply button. Date headers in
-History place the full-day count and net beside the date. Rows place the category
-icon and account/category detail on the left and the signed amount on the right.
-History's Clear filters and Refresh remain secondary actions.
+controls, month-navigation toolbar, or external Apply button. History rows place
+the category icon and account/category detail on the left and the signed amount
+on the right. Clear filters and Refresh remain secondary actions.
 
 History initializes to the current month and supports inclusive calendar ranges.
 Account, type (income/expense/transfer) and exact/subtree category filters combine
@@ -192,18 +195,17 @@ Calendar Clear removes only the date filter and closes the picker; dismissing it
 discards edits. History's separate Clear filters action removes every filter and
 starts a new pagination chain. A category filter excludes transfers.
 
-Group compact rows by the stored transaction date, newest first. Headers show
-the full filtered-day count and net per currency even when that date spans pages.
-Count transfers once; exclude them from income/expense/net/category totals.
+Group compact rows under date-only headings, newest first. Show one row per
+transfer.
 Ordinary rows use category icons and optional note/category/date fallback text;
 transfers use a dedicated icon and From -> To labels. Account statements label
-incoming/outgoing transfers and their balance sign. They remain excluded from net.
+incoming/outgoing transfers and their balance sign.
 Settings account details link to History with that account selected, including
 archived accounts. Existing readiness still requires at least one active account.
 
 Older/newer cursor pages merge into one section per date. Failed reads preserve
 loaded context with a stale-data notice and an explicit retry. Confirmed finance
-changes invalidate cursors; returning to History reloads current labels/totals.
+changes invalidate cursors; returning to History reloads current records.
 After a confirmed create or update, entry opens History with the saved resource ID.
 The History focus request reveals and highlights an owned record through bounded
 reads, explains only necessary filter adjustments, and keeps newer/older paging.
@@ -218,26 +220,22 @@ Unavailable, with an accessible explanation. Each Overview visit initializes and
 loads the full current local month, including its final day. Ordinary renders,
 category expansion and automatic finance refreshes retain the applied dates.
 
-Income and Expenses have separate lavender card headings, totals and percentage
-changes. Expenses display negative amounts; comparison calculations use positive
-spending magnitudes. Expandable category rows show existing icons and indented
-subcategories, including direct-parent entries. Empty sections show a short message
-inside their card. Actual uncategorized amounts remain explicit when present.
-The screen has no currency banner, manual Refresh control, auxiliary footer links,
-or comparison explanation footer. The Add / History / Overview bar stays outside
-the scrolling screen, with Overview selected.
+Income and Expenses have separate lavender card headings with totals for the
+applied range. Expenses display negative amounts. Expandable category rows show
+icons and indented subcategories, including direct-parent entries. Amounts are
+right-aligned. Long names can wrap, and amounts sit below labels on narrow screens
+or at larger text sizes. Empty sections show a short message inside their card.
+Actual uncategorized amounts remain explicit when present. The Add / History /
+Overview bar stays outside the scrolling screen, with Overview selected.
 
-Full-month comparisons use the preceding calendar month. Other bounded ranges use
-the preceding equal inclusive interval; all dates has no comparison. Changes show
-signs and accessible descriptions: income increases and expense decreases are
-green, adverse changes red, and unavailable/zero baselines a dash. Error/retry and
-loading states never present fabricated zero totals. Confirmed finance changes
-refresh reports automatically; late requests cannot overwrite newer selections.
+Confirmed finance changes refresh reports automatically. Late requests cannot
+overwrite newer selections, and loading and error states hold totals until a read
+succeeds.
 
 Transfers and opening balances affect account balances, not report income or
 expenses. Do not add unlike currencies. Archived category metadata stays readable;
 labels use current names rather than immutable historical snapshots. See the
-[report contract](finance-contracts.md#overview-reports-and-comparisons).
+[report contract](finance-contracts.md#overview-reports).
 
 ## States and recovery
 
@@ -249,7 +247,7 @@ labels use current names rather than immutable historical snapshots. See the
 | Saving                           | Lock concurrent submit/mode-changing writes and keep the same request identity.                                               | Disable repeated mutation while pending.                                       | Do not optimistically change posted totals or import counts.                                                  |
 | Uncertain write                  | Keep the draft/key; check the existing operation before allowing another create. A timeout is not evidence of failure.        | Reload/reconcile before a blind mutation retry.                                | Preserve selection/review; confirmation retry uses the same idempotency identity.                             |
 | Success                          | Announce success, refresh dependent views and prepare another entry; clear amount/note, preserve appropriate user selections. | Return the created/selected ID; refresh lists/defaults.                        | Show only server-confirmed records, counts and totals.                                                        |
-| Cancellation                     | Back from pickers returns unchanged; explicitly discarding a dirty draft requires confirmation.                               | Cancel creates/archives nothing.                                               | Cancelling a statement review posts nothing.                                                                  |
+| Cancellation                     | Back from pickers keeps entered values. Signing out with a dirty draft requires confirmation.                                 | Cancel creates/archives nothing.                                               | Cancelling a statement review posts nothing.                                                                  |
 | Session expired / account switch | Hide protected data and clear session-owned drafts, selections and keys on logout/account switch.                             | Cancel stale callbacks; no prior-user choices remain visible.                  | Restore verified access or sign in; no duplicate replay after renewal.                                        |
 | Read/network error               | Keep entered values and explain retry/recovery.                                                                               | Retry loading without enabling writes against missing/stale required data.     | Preserve filters and loaded context; mark failed refresh instead of showing stale totals as freshly verified. |
 

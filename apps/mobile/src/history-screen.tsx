@@ -20,7 +20,6 @@ import {
   historyDateLabel,
   historyKey,
   historyRecordText,
-  signedMoney,
   type HistoryRow
 } from "./history-data";
 import { useHistory, type HistoryProps } from "./use-history";
@@ -248,8 +247,8 @@ export function HistoryScreen(
         )}
         {state.stale && page && (
           <Body>
-            Previously loaded history and totals may be out of date. Refresh
-            before continuing pagination.
+            Previously loaded history may be out of date. Refresh before
+            continuing pagination.
           </Body>
         )}
         {page?.previousCursor && (
@@ -268,29 +267,9 @@ export function HistoryScreen(
         )}
         {dates.map((date) => (
           <View key={date} style={styles.group}>
-            <View style={styles.groupHeader}>
-              <Text accessibilityRole="header" style={styles.date}>
-                {historyDateLabel(date)}
-              </Text>
-              <View style={styles.daySummary}>
-                {page?.days
-                  .filter((day) => day.date === date)
-                  .map((day) => (
-                    <Text
-                      key={day.currency}
-                      style={[
-                        styles.dayTotal,
-                        day.netMinor < 0 && styles.expense,
-                        day.netMinor > 0 && styles.income
-                      ]}
-                    >
-                      {day.count}{" "}
-                      {day.count === 1 ? "transaction" : "transactions"} · Net{" "}
-                      {signedMoney(day.netMinor, day.currency)}
-                    </Text>
-                  ))}
-              </View>
-            </View>
+            <Text accessibilityRole="header" style={styles.groupHeader}>
+              {historyDateLabel(date)}
+            </Text>
             {page?.items
               .filter((row) => row.date === date)
               .map((row) => (
@@ -534,16 +513,11 @@ const styles = StyleSheet.create({
   groupHeader: {
     paddingHorizontal: 12,
     paddingVertical: 9,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: 6,
+    fontSize: 14,
+    fontWeight: "700",
+    color: theme.color.text,
     backgroundColor: theme.color.primarySoft
   },
-  date: { fontSize: 14, fontWeight: "700", color: theme.color.text },
-  daySummary: { alignItems: "flex-end", flexShrink: 1 },
-  dayTotal: { color: theme.color.muted, fontSize: 12, fontWeight: "600" },
   row: {
     flexDirection: "row",
     alignItems: "center",

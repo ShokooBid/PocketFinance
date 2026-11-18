@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dashboardFailureMessage } from "./dashboard-data";
+import {
+  currentMonth,
+  dashboardFailureMessage,
+  monthRange
+} from "./dashboard-data";
 import type { Report, ReportSource } from "./report-data";
-import { initialReportRange } from "./report-period";
 import type { Currency } from "./transaction-data";
 import type { PickerRange } from "./date-picker-data";
 
@@ -11,7 +14,9 @@ type State =
   | { status: "ready"; data: Report; key: string; source: ReportSource };
 
 export function useReport(source: ReportSource, currency: Currency) {
-  const [range, setRange] = useState<PickerRange>(initialReportRange);
+  const [range, setRange] = useState<PickerRange>(() =>
+    monthRange(currentMonth())
+  );
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState<State>({ status: "loading" });
   const sequence = useRef(0);

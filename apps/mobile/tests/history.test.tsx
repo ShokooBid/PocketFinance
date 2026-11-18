@@ -546,7 +546,7 @@ describe("History request coordination", () => {
     expect(consumed).toHaveBeenCalledTimes(1);
     expect(list.mock.calls[1]).toEqual([{}, {}]);
   });
-  it("renders one date header with full-day counts and opens the selected logical record", async () => {
+  it("renders a date-only heading and opens the selected logical record", async () => {
     const transfer = row(2, {
       kind: "transfer",
       type: "transfer",
@@ -563,7 +563,7 @@ describe("History request coordination", () => {
         screen.getByRole("header", { name: historyDateLabel("2026-10-29") })
       ).toBeTruthy()
     );
-    expect(screen.getAllByText(/4 transactions/)).toHaveLength(1);
+    expect(screen.queryByText(/\bNet\b|\d+ transactions?\b/i)).toBeNull();
     fireEvent.press(
       screen.getByRole("button", {
         name: /Transfer\. Transfer\. Cash → Savings/

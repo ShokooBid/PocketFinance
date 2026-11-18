@@ -279,7 +279,7 @@ export function historyDateLabel(date: string) {
     timeZone: "UTC"
   }).format(new Date(`${date}T12:00:00Z`));
 }
-export function signedMoney(amount: number, currency: Currency) {
+function signedMoney(amount: number, currency: Currency) {
   return `${amount < 0 ? "−" : amount > 0 ? "+" : ""}${currency} ${amountText(Math.abs(amount), currency)}`;
 }
 export function historyRecordText(
@@ -332,5 +332,5 @@ export function historyFailureMessage(error: unknown) {
     if (error.kind === "rate-limit")
       return "Too many requests. Wait a moment, then try again.";
   }
-  return "History could not be refreshed. Previously loaded rows and totals may be out of date. Try again.";
+  return "History could not be refreshed. Previously loaded rows may be out of date. Try again.";
 }

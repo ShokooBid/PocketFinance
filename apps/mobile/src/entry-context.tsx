@@ -115,6 +115,7 @@ function useEntryState() {
     draft: EntryDraft;
     initialized: boolean;
     dateEdited: boolean;
+    dirty: boolean;
   } | null>(null);
   const [leaving, setLeaving] = useState<{ action: () => void } | null>(null);
   const activeAccounts = accounts.filter(
@@ -287,6 +288,15 @@ function useEntryState() {
       ...patch
     }));
   }
+  function preserveAddDraft() {
+    if (editingTransaction || editingTransfer) return;
+    addDraftBeforeEdit.current = {
+      draft: entryDraft,
+      initialized: initialized.current,
+      dateEdited: dateEdited.current,
+      dirty
+    };
+  }
   function resetDraft() {
     const previousAdd = addDraftBeforeEdit.current;
     addDraftBeforeEdit.current = null;
@@ -300,7 +310,7 @@ function useEntryState() {
     setReviewed(false);
     setErrors({});
     setMessage(null);
-    setDirty(false);
+    setDirty(previousAdd?.dirty ?? false);
     setDraft(
       previousAdd?.draft ??
         freshEntry(
@@ -397,24 +407,25 @@ function useEntryState() {
     setUncertain(false);
     setReviewed(false);
     setErrors({});
-    setDirty(false);
     const previousAdd = addDraftBeforeEdit.current;
     addDraftBeforeEdit.current = null;
+    setDirty(previousAdd?.dirty ?? false);
     if (previousAdd) {
       initialized.current = previousAdd.initialized;
       dateEdited.current = previousAdd.dateEdited;
     }
     if ("categoryId" in row) rememberCategory(row.categoryId);
-    setDraft((previous) => ({
-      ...(previousAdd?.draft ?? { ...previous, amount: "", note: "" }),
-      categoryId: ""
-    }));
-    setSaved({ id: row.id, kind });
-    setMessage(
-      kind === "transfer"
-        ? "Transfer saved. Opening History."
-        : "Transaction saved. Opening History."
+    setDraft(
+      (previous) =>
+        previousAdd?.draft ?? {
+          ...previous,
+          amount: "",
+          note: "",
+          categoryId: ""
+        }
     );
+    setSaved({ id: row.id, kind });
+    setMessage(kind === "transfer" ? "Transfer saved. Opening History." : null);
     void reload();
   }
   async function save(retry = false, confirmed = false) {
@@ -549,10 +560,13 @@ function useEntryState() {
     review,
     requestDiscard,
     cancelEditing(action: () => void) {
-      requestDiscard(() => {
+      if (locked.current || pending.current) return;
+      const cancel = () => {
         resetDraft();
         action();
-      });
+      };
+      if (editingTransaction) cancel();
+      else requestDiscard(cancel);
     },
     leaving,
     setLeaving,
@@ -613,13 +627,7 @@ function useEntryState() {
         return;
       }
       requestDiscard(() => {
-        addDraftBeforeEdit.current = dirty
-          ? null
-          : {
-              draft: entryDraft,
-              initialized: initialized.current,
-              dateEdited: dateEdited.current
-            };
+        if (!dirty) preserveAddDraft();
         dateEdited.current = true;
         initialized.current = true;
         setEditingTransfer(row);
@@ -648,34 +656,26 @@ function useEntryState() {
         );
         return;
       }
-      requestDiscard(() => {
-        addDraftBeforeEdit.current = dirty
-          ? null
-          : {
-              draft: entryDraft,
-              initialized: initialized.current,
-              dateEdited: dateEdited.current
-            };
-        dateEdited.current = true;
-        initialized.current = true;
-        setEditingTransaction(row);
-        setEditingTransfer(null);
-        setConfirmation(null);
-        setErrors({});
-        setMessage(null);
-        setDirty(true);
-        setDraft({
-          direction: row.direction,
-          amount: amountText(row.amountMinor, row.currency),
-          currency: row.currency,
-          accountId: row.accountId,
-          toAccountId: "",
-          categoryId: row.categoryId,
-          date: row.date,
-          note: row.note ?? ""
-        });
-        action();
+      preserveAddDraft();
+      dateEdited.current = true;
+      initialized.current = true;
+      setEditingTransaction(row);
+      setEditingTransfer(null);
+      setConfirmation(null);
+      setErrors({});
+      setMessage(null);
+      setDirty(true);
+      setDraft({
+        direction: row.direction,
+        amount: amountText(row.amountMinor, row.currency),
+        currency: row.currency,
+        accountId: row.accountId,
+        toAccountId: "",
+        categoryId: row.categoryId,
+        date: row.date,
+        note: row.note ?? ""
       });
+      action();
     }
   };
 }

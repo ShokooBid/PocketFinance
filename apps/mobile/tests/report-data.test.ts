@@ -1,12 +1,6 @@
 import { describe, expect, it, jest } from "@jest/globals";
 import { aggregateReport, createReportSource } from "../src/report-data";
 import {
-  changeDescription,
-  comparisonRange,
-  initialReportRange,
-  percentageChange
-} from "../src/report-period";
-import {
   createApiDashboardSource,
   type DashboardSource,
   type DashboardSummary
@@ -67,82 +61,8 @@ function summary(
   };
 }
 
-describe("report calendar and comparison rules", () => {
-  it.each([
-    [new Date(2026, 10, 17, 23, 59), "2026-11-01", "2026-11-30"],
-    [new Date(2027, 0, 1), "2027-01-01", "2027-01-31"],
-    [new Date(2026, 11, 31), "2026-12-01", "2026-12-31"],
-    [new Date(2024, 1, 29), "2024-02-01", "2024-02-29"],
-    [new Date(2100, 1, 17), "2100-02-01", "2100-02-28"]
-  ])(
-    "initializes both inclusive month boundaries using the local calendar (%s)",
-    (date, from, to) => {
-      expect(initialReportRange(date as Date)).toEqual({ from, to });
-    }
-  );
-  it.each([
-    ["2026-11-01", "2026-11-30", "2026-10-01", "2026-10-31"],
-    ["2027-01-01", "2027-01-31", "2026-12-01", "2026-12-31"],
-    ["2024-03-01", "2024-03-31", "2024-02-01", "2024-02-29"],
-    ["2024-02-01", "2024-02-29", "2024-01-01", "2024-01-31"],
-    ["2026-11-17", "2026-11-17", "2026-11-16", "2026-11-16"],
-    ["2024-03-01", "2024-03-03", "2024-02-27", "2024-02-29"],
-    ["2026-11-01", "2026-11-02", "2026-10-30", "2026-10-31"],
-    ["2026-03-08", "2026-03-10", "2026-03-05", "2026-03-07"]
-  ])(
-    "compares %s–%s with the appropriate preceding period",
-    (from, to, start, end) => {
-      expect(comparisonRange({ from, to })).toEqual({ from: start, to: end });
-    }
-  );
-  it("marks unsupported comparisons unavailable and preserves History's range bound", () => {
-    expect(
-      comparisonRange({ from: "0001-01-01", to: "0001-01-31" })
-    ).toBeNull();
-    expect(
-      comparisonRange({ from: "0001-01-02", to: "0001-01-05" })
-    ).toBeNull();
-    expect(
-      comparisonRange({ from: "2026-12-01", to: "2026-11-01" })
-    ).toBeNull();
-    expect(
-      comparisonRange({ from: "2024-01-01", to: "2025-01-01" })
-    ).not.toBeNull();
-    expect(
-      comparisonRange({ from: "2024-01-01", to: "2025-01-02" })
-    ).toBeNull();
-  });
-  it("uses positive magnitudes, signs, favorable direction and absent/zero baselines", () => {
-    expect(percentageChange(150, 100)).toBe(50);
-    expect(percentageChange(100, 0)).toBeNull();
-    expect(percentageChange(100, null)).toBeNull();
-    expect(changeDescription(150, 100, false)).toMatchObject({
-      label: "+50%",
-      tone: "good"
-    });
-    expect(changeDescription(150, 100, true)).toMatchObject({
-      label: "+50%",
-      tone: "bad"
-    });
-    expect(changeDescription(50, 100, true)).toMatchObject({
-      label: "−50%",
-      tone: "good",
-      description: expect.stringContaining("Spending decreased")
-    });
-    expect(changeDescription(0, 100, false)).toMatchObject({
-      label: "−100%",
-      tone: "bad"
-    });
-    expect(changeDescription(0, 0, true).label).toBe("—");
-    expect(changeDescription(100, 100, true)).toMatchObject({
-      label: "+0%",
-      tone: "neutral"
-    });
-  });
-});
-
 describe("report aggregation and sources", () => {
-  it("clears the date filter with one aggregate read and no bounded comparison", async () => {
+  it("clears the date filter with one all-dates aggregate read", async () => {
     const read = jest
       .fn<DashboardSource["summary"]>()
       .mockResolvedValue({ ...summary([]), from: null, to: null });
@@ -157,32 +77,8 @@ describe("report aggregation and sources", () => {
     });
     expect(read).toHaveBeenCalledTimes(1);
     expect(read).toHaveBeenCalledWith({ allDates: true, currency: "USD" });
-    expect(report.income).toEqual({ current: 0, previous: null, rows: [] });
-    expect(report.expenses).toEqual({ current: 0, previous: null, rows: [] });
-  });
-  it("keeps current totals with unavailable comparisons when the baseline cannot load", async () => {
-    const read = jest
-      .fn<DashboardSource["summary"]>()
-      .mockResolvedValueOnce(
-        summary([{ categoryId: root, incomeMinor: 100, expensesMinor: 200 }])
-      )
-      .mockRejectedValueOnce(new Error("offline comparison"));
-    const source = createReportSource(
-      { summary: read, subscribe: () => () => {} },
-      { list: async () => categories }
-    );
-    const report = await source.load({
-      from: "2026-11-01",
-      to: "2026-11-30",
-      currency: "USD"
-    });
-    expect(report.income).toMatchObject({ current: 100, previous: null });
-    expect(report.expenses).toMatchObject({ current: 200, previous: null });
-    expect(read).toHaveBeenLastCalledWith({
-      from: "2026-10-01",
-      to: "2026-10-31",
-      currency: "USD"
-    });
+    expect(report.income).toEqual({ totalMinor: 0, rows: [] });
+    expect(report.expenses).toEqual({ totalMinor: 0, rows: [] });
   });
   it("reconciles direct parent postings, children and uncategorized money without adding root totals twice", () => {
     const current = summary([
@@ -199,64 +95,65 @@ describe("report aggregation and sources", () => {
         netMinor: 0
       }
     ];
-    const previous = summary([
-      { categoryId: child, incomeMinor: 0, expensesMinor: 2000 }
-    ]);
-    const report = aggregateReport(current, previous, categories);
-    expect(report.income.current).toBe(1300);
-    expect(report.expenses.current).toBe(1050);
+    const report = aggregateReport(current, categories);
+    expect(report.income.totalMinor).toBe(1300);
+    expect(report.expenses.totalMinor).toBe(1050);
     const food = report.expenses.rows[0]!;
     expect(food).toMatchObject({
       name: "Food & Drinks",
-      current: 1000,
-      previous: 2000
+      amountMinor: 1000
     });
-    expect(food.children.map((row) => [row.name, row.current])).toEqual([
+    expect(food.children.map((row) => [row.name, row.amountMinor])).toEqual([
       ["General · Food & Drinks", 200],
       ["Cafe", 0],
       ["Groceries", 800]
     ]);
-    expect(food.children.reduce((sum, row) => sum + row.current, 0)).toBe(
-      food.current
+    expect(food.children.reduce((sum, row) => sum + row.amountMinor, 0)).toBe(
+      food.amountMinor
     );
     expect(
-      report.expenses.rows.reduce((sum, row) => sum + row.current, 0)
+      report.expenses.rows.reduce((sum, row) => sum + row.amountMinor, 0)
     ).toBe(1050);
     expect(report.income.rows.at(-1)).toMatchObject({
       name: "Uncategorized income",
-      current: 300
+      amountMinor: 300
     });
     expect(report.expenses.rows.at(-1)).toMatchObject({
       name: "Uncategorized expenses",
-      current: 50
+      amountMinor: 50
     });
   });
-  it("retains previous-only, archived and unavailable categories and marks absent comparisons", () => {
-    const old = summary([
+  it("retains archived and unavailable category labels for activity in the selected period", () => {
+    const activity = summary([
       { categoryId: child, incomeMinor: 0, expensesMinor: 100 }
     ]);
-    const report = aggregateReport(
-      summary([]),
-      old,
-      categories.map((row) => ({ ...row, archivedAt: "2026-11-01T00:00:00Z" }))
+    const archived = categories.map((row) => ({
+      ...row,
+      archivedAt: "2026-11-01T00:00:00Z"
+    }));
+    const food = aggregateReport(activity, archived).expenses.rows[0]!;
+    expect(food).toMatchObject({ name: "Food & Drinks", amountMinor: 100 });
+    expect(food.children).toContainEqual(
+      expect.objectContaining({ name: "Groceries", amountMinor: 100 })
     );
-    expect(report.expenses.rows[0]).toMatchObject({
-      current: 0,
-      previous: 100
+    expect(aggregateReport(activity, []).expenses.rows[0]).toMatchObject({
+      id: root,
+      amountMinor: 100,
+      children: [
+        expect.anything(),
+        expect.objectContaining({ name: "Groceries" })
+      ]
     });
-    expect(aggregateReport(old, null, []).expenses.rows[0]).toMatchObject({
-      current: 100,
-      previous: null
-    });
-    expect(() =>
-      aggregateReport(old, summary([], "EUR"), categories)
-    ).toThrow();
+    expect(aggregateReport(summary([]), archived).expenses.rows).toEqual([]);
   });
-  it("loads two bounded aggregate requests in the selected currency without reading transaction pages", async () => {
+  it("uses a single aggregate request in the selected currency and date range", async () => {
     const fetcher = jest.fn<FetchRequest>().mockImplementation(async (url) => {
       const query = new URL(String(url)).searchParams;
       return response({
-        ...summary([], "JPY"),
+        ...summary(
+          [{ categoryId: root, incomeMinor: 100, expensesMinor: 200 }],
+          "JPY"
+        ),
         from: query.get("from"),
         to: query.get("to")
       });
@@ -273,11 +170,10 @@ describe("report aggregation and sources", () => {
       to: "2026-11-30",
       currency: "JPY"
     });
-    expect(report.income.previous).toBe(0);
-    expect(report.expenses.previous).toBe(0);
+    expect(report.income.totalMinor).toBe(100);
+    expect(report.expenses.totalMinor).toBe(200);
     expect(fetcher.mock.calls.map((call) => String(call[0]))).toEqual([
-      "https://api.example.invalid/v1/dashboard/summary?from=2026-11-01&to=2026-11-30&currency=JPY&recentLimit=5",
-      "https://api.example.invalid/v1/dashboard/summary?from=2026-10-01&to=2026-10-31&currency=JPY&recentLimit=5"
+      "https://api.example.invalid/v1/dashboard/summary?from=2026-11-01&to=2026-11-30&currency=JPY&recentLimit=5"
     ]);
   });
 });

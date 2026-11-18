@@ -90,8 +90,8 @@ The API publishes OpenAPI from its route schemas and enforces server-side author
   accounting days through server timezones.
 - **Aggregate reporting:** the API totals persisted postings for one currency;
   the client never downloads transaction pages to calculate live reports. Exact
-  category groups reconcile parent and child amounts once. Calendar/comparison
-  rules, aggregation, request coordination, and rendering have separate modules.
+  category groups reconcile parent and child amounts once. Reports fetches totals
+  for the selected date range.
 
 ## Explore the code
 
@@ -102,7 +102,7 @@ The API publishes OpenAPI from its route schemas and enforces server-side author
 | Database design       | [schema.prisma](apps/api/prisma/schema.prisma) and [migrations](apps/api/prisma/migrations)                       | Relationships, indexes, and SQL-enforced invariants.                                 |
 | Mobile authentication | [session-controller.ts](apps/mobile/src/auth/session-controller.ts)                                               | Session lifecycle and injected storage/provider boundaries.                          |
 | Reports UI and state  | [reports-screen.tsx](apps/mobile/src/reports-screen.tsx) and [use-report.ts](apps/mobile/src/use-report.ts)       | Expandable cards, loading/retry states, and stale-response protection.               |
-| Report calculations   | [report-period.ts](apps/mobile/src/report-period.ts) and [report-data.ts](apps/mobile/src/report-data.ts)         | Calendar comparisons, exact category reconciliation, and source composition.         |
+| Report calculations   | [report-data.ts](apps/mobile/src/report-data.ts)                                                                  | Selected-range totals and exact category reconciliation.                             |
 | Report API            | [dashboard/service.ts](apps/api/src/dashboard/service.ts) and [contracts.ts](apps/api/src/dashboard/contracts.ts) | Owned SQL aggregates, currency filtering, safe integer bounds, and repeatable reads. |
 | Shared date selector  | [date-picker.tsx](apps/mobile/src/date-picker.tsx)                                                                | One range control for History and Reports, with internal Apply/Clear actions.        |
 | Integration tests     | [API tests](apps/api/tests/integration)                                                                           | Real PostgreSQL migrations, authorization, and finance contracts.                    |

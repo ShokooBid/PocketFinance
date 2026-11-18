@@ -31,11 +31,11 @@ the calendar. Clear shows all dates; dismissing a draft keeps the applied filter
 The currency banner, manual Refresh, auxiliary footer links and comparison footer
 are removed. Empty cards show a short sentence instead of placeholder categories.
 
-Current/comparison totals use the authenticated aggregate endpoint or an isolated
+Totals for the selected range use the authenticated aggregate endpoint or an isolated
 demo snapshot. Money stays in integer minor units, currencies remain separate,
 and transfers are excluded. Charts is explicitly unavailable. See the
 [current UX](ux.md#history-and-overview),
-[report contract](finance-contracts.md#overview-reports-and-comparisons), and
+[report contract](finance-contracts.md#overview-reports), and
 [verification evidence and limitations](verification.md#issue-117-overview-reports-2026-11-17).
 
 ## Live History implementation (2026-11-10)
