@@ -318,9 +318,7 @@ export function TransactionEntry() {
           <Text
             accessibilityLiveRegion="polite"
             numberOfLines={
-              /^(Transaction|Transfer) saved\./.test(entry.message)
-                ? 1
-                : undefined
+              entry.message.startsWith("Transfer saved.") ? 1 : undefined
             }
             ellipsizeMode="tail"
             style={styles.message}

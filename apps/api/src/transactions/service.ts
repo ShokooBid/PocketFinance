@@ -218,10 +218,13 @@ export function createTransactionService(db: PrismaClient) {
             creationFingerprint,
             date: new Date(payload.date),
             merchant: null
-          },
-          include: withAccountCurrency
+          }
         });
-        return { resource: serializeTransaction(row), replayed: false };
+        if (!row) throw new Error("Transaction insert did not return a row.");
+        return {
+          resource: serializeTransaction({ ...row, account }),
+          replayed: false
+        };
       });
     },
     update(userId: string, id: string, patch: TransactionPatch) {

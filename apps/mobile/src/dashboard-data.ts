@@ -109,13 +109,6 @@ export function monthRange(month: string) {
     number === 2 ? (leap ? 29 : 28) : [4, 6, 9, 11].includes(number) ? 30 : 31;
   return { from: `${month}-01`, to: `${month}-${days}` };
 }
-export function adjacentMonth(month: string, delta: -1 | 1): string | null {
-  monthRange(month);
-  const index =
-    Number(month.slice(0, 4)) * 12 + Number(month.slice(5)) - 1 + delta;
-  if (index < 12 || index >= 10000 * 12) return null;
-  return `${String(Math.floor(index / 12)).padStart(4, "0")}-${String((index % 12) + 1).padStart(2, "0")}`;
-}
 export function moneyLabel(amountMinor: number, currency: Currency) {
   return `${currency} ${amountMinor < 0 ? "-" : ""}${amountText(Math.abs(amountMinor), currency)}`;
 }

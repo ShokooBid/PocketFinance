@@ -343,7 +343,7 @@ automatic navigation and editor lifecycle; #75 exposes the History handoff.
 Statements retain one logical transfer and label its incoming/outgoing account
 side. Archived references remain readable and all ledger queries remain owned.
 
-#### Overview Reports and comparisons
+#### Overview Reports
 
 Issue #117 reuses `GET /v1/dashboard/summary` for Reports. Authentication determines
 the owner; one supported `currency` is required. Choose exactly one date mode:
@@ -369,23 +369,11 @@ Archived category labels remain readable with current names. Totals and recents
 share one repeatable-read snapshot per response; unsafe totals return
 `SUMMARY_AMOUNT_OUT_OF_RANGE` rather than rounded money.
 
-Reports selects comparison bounds on the client, then requests aggregate totals
-for each period. A full calendar month compares with the preceding calendar month;
-other bounded ranges compare with the immediately preceding equal inclusive
-length. For example, November 1–30, 2026 compares with October 1–31; November 17
-alone compares with November 16. All dates has no bounded baseline. Each request
-has its own database snapshot; no cross-request snapshot guarantee is implied.
-
-Change is `(current - previous) / previous * 100`, using positive expense
-magnitudes. Display expenses negatively. Income increases and spending decreases
-are favorable; zero change is neutral. A zero baseline, an unsupported preceding
-period or a failed comparison read yields a dash. Current totals can still render
-when only the comparison fails. A failed current/metadata read offers retry.
-
-Live reports use SQL aggregates, never transaction-page downloads. The demo reads
-its isolated in-memory snapshot and applies the same category/comparison rules.
-Clearing dates does not change currency or ownership scope. No migration is added
-for this extension; matching API/mobile revisions must be deployed together.
+Reports requests one summary for the selected range and reads category metadata to
+label parent and child rows. It displays expenses as negative amounts and offers
+retry when either read fails. Live reports use SQL aggregates. The demo applies the
+same grouping rules to its isolated in-memory snapshot. Clearing dates keeps the
+selected currency and the user's ownership scope.
 
 Invariant example: account A opens at 10000 CAD minor units, B at zero. A normal
 expense of 1250 and transfer A -> B of 2500 produce A = 6250, B = 2500, period

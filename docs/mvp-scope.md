@@ -82,7 +82,7 @@ tracking and statement import are useful, understandable, and dependable.
 ### Reports and history
 
 - Show separate Income and Expenses cards in Overview Reports, with expandable
-  category totals, signed comparisons, and a short empty message per section.
+  category totals and a short empty message per section.
 - Load the full local current month on Overview entry. Share one range selector
   with History; Apply commits dates and Clear shows all dates. Keep Charts unavailable
   until a separate chart implementation is delivered.
@@ -91,9 +91,7 @@ tracking and statement import are useful, understandable, and dependable.
 - Roll child/direct-parent category assignments into parent totals without double
   counting. Retain explicit currencies; never add unlike currencies.
 - Calculate all financial totals in the backend from persisted transactions.
-- Compare a full month with its preceding calendar month; compare other bounded
-  ranges with the preceding equal inclusive interval. All dates and unavailable
-  or zero baselines display a dash. Currency conversion remains excluded.
+- Fetch one aggregate summary for the selected date range and currency.
 
 ### Statement imports: subsequent delivery
 

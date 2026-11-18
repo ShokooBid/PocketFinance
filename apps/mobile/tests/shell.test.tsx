@@ -185,6 +185,14 @@ describe("session navigation", () => {
     expect(
       await screen.findByRole("button", { name: "Edit Keypad purchase" })
     ).toBeVisible();
+    await tap(screen.getByRole("link", { name: "Add" }));
+    expect(
+      await screen.findByRole("header", { name: "New transaction screen" })
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/Transaction saved\. Opening History\./)
+    ).toBeNull();
+    await tap(screen.getByRole("link", { name: "History" }));
     await press("View details for Keypad purchase");
     await screen.findByRole("header", { name: "Transaction details screen" });
     await press("Edit Keypad purchase");
@@ -199,16 +207,31 @@ describe("session navigation", () => {
       await screen.findByRole("header", { name: "History screen" })
     ).toBeVisible();
     expect(screen.getByRole("link", { name: "Add" })).toBeVisible();
+    await tap(screen.getByRole("link", { name: "Add" }));
+    await field("Amount", "11.25");
+    await field("Note (optional)", "Unfinished new transaction");
+    await tap(screen.getByRole("link", { name: "History" }));
     await press("Edit Keypad purchase");
+    expect(
+      await screen.findByRole("header", { name: "Edit transaction screen" })
+    ).toBeVisible();
     await field("Amount", "9.50");
     await press("Cancel transaction editing");
-    await press("Confirm discard draft");
     expect(
       await screen.findByRole("header", { name: "History screen" })
     ).toBeVisible();
-    expect(screen.getByRole("link", { name: "Add" })).toBeVisible();
+    await press("Edit Keypad purchase");
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "8.50");
+    await press("Cancel transaction editing");
+    expect(
+      await screen.findByRole("header", { name: "History screen" })
+    ).toBeVisible();
     await tap(screen.getByRole("link", { name: "Add" }));
-    expect(screen.getByLabelText("Amount")).toHaveProp("value", "");
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "11.25");
+    expect(screen.getByLabelText("Note (optional)")).toHaveProp(
+      "value",
+      "Unfinished new transaction"
+    );
     expect(
       screen.getByRole("button", {
         name: "Account: Demo setup cash",

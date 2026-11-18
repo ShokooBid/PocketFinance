@@ -177,23 +177,19 @@ calendar. Refreshes and category expansion keep that applied selection.
 - `reports-screen.tsx` renders Income/Expenses cards and composes the same
   `RangeDateField` used by History. The calendar owns draft selection; only Apply
   or Clear changes the applied filter.
-- `use-report.ts` coordinates reads and finance-change subscriptions. Request
+- `use-report.ts` initializes the current month and coordinates reads and
+  finance-change subscriptions. Request
   sequence and source/selection checks prevent late responses from replacing the
   current report or exposing a previous session's data.
-- `report-period.ts` owns local-month initialization, date-only comparison ranges,
-  percentage changes, and favorable/adverse descriptions.
-- `report-data.ts` combines current/comparison aggregates with category metadata.
+- `report-data.ts` combines the selected range's aggregates with category metadata.
   It sums exact category postings, including direct-parent entries, without adding
   the API's separate root totals again.
 - `dashboard-data.ts` adapts authenticated aggregate queries and isolated demo
   snapshots. Live reporting never fetches transaction pages.
 
-Current and comparison periods use separate aggregate requests, each with its own
-repeatable-read database snapshot. They are not one cross-request snapshot.
-If the comparison read fails, current totals remain available with dash changes;
-if the current report cannot load, the screen offers a safe error and retry.
-All-date reports have no comparison. See the
-[report contract](mobile-redesign/finance-contracts.md#overview-reports-and-comparisons)
+Reports requests one summary for the applied date selection. If the summary
+or category metadata cannot load, the screen offers a safe error and retry. See the
+[report contract](mobile-redesign/finance-contracts.md#overview-reports)
 and [verification record](mobile-redesign/verification.md#issue-117-overview-reports-2026-11-17).
 
 ## Authentication and sessions

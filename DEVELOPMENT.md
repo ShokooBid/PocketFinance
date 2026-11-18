@@ -154,7 +154,7 @@ Overview Reports reuses `GET /v1/dashboard/summary`. Supply paired inclusive
 `allDates=true` with no dates after Clear. The latter returns null date bounds;
 bounded queries retain date-only strings. Deploy the matching client and API
 together for this contract extension. No new migration or dependency is required.
-See the [reporting contract](docs/mobile-redesign/finance-contracts.md#overview-reports-and-comparisons).
+See the [reporting contract](docs/mobile-redesign/finance-contracts.md#overview-reports).
 
 ## Connect the native app
 
