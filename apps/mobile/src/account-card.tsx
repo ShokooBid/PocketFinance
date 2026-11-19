@@ -6,7 +6,7 @@ import { AccountAction } from "./account-action";
 import { theme } from "./theme";
 
 type IconName = Account["type"] | "eye" | "rename" | "star" | "archive";
-function AccountIcon({
+export function AccountIcon({
   name,
   active = false,
   size = 18

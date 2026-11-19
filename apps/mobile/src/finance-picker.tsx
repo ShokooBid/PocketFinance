@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
+import { AccountIcon } from "./account-card";
 import type { Account, AccountSource } from "./account-data";
 import type { Category } from "./category-data";
 import { categoryPath } from "./category-hierarchy";
@@ -22,22 +23,29 @@ import {
   useCategoryPicker,
   type CategoryPickerSource
 } from "./use-finance-picker";
-import { Body, Button, Field, StateNotice } from "./ui";
+import {
+  Body,
+  Button,
+  Dropdown,
+  Field,
+  StateNotice,
+  type DropdownOption
+} from "./ui";
 import { ScreenDecoration } from "./screen-decoration";
 
 function PickerModal({
   title,
   onClose,
-  onBack = onClose,
-  cancelLabel = "Cancel selection",
-  categoryNavigation,
+  onBack,
+  cancelLabel,
+  backLabel,
   children
 }: PropsWithChildren<{
   title: string;
   onClose: () => void;
-  onBack?: () => void;
-  cancelLabel?: string;
-  categoryNavigation?: { label: string };
+  onBack: () => void;
+  cancelLabel: string;
+  backLabel: string;
 }>) {
   return (
     <Modal
@@ -58,48 +66,33 @@ function PickerModal({
           keyboardDismissMode="on-drag"
         >
           <ScreenDecoration entry />
-          {categoryNavigation ? (
-            <View style={styles.categoryToolbar}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={categoryNavigation.label}
-                onPress={() => {
-                  Keyboard.dismiss();
-                  onBack();
-                }}
-                style={styles.toolbarButton}
-              >
-                <PickerSymbol kind="back" color={theme.color.onPrimary} />
-              </Pressable>
-              <Text accessibilityRole="header" style={styles.toolbarTitle}>
-                {title}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={cancelLabel}
-                onPress={() => {
-                  Keyboard.dismiss();
-                  onClose();
-                }}
-                style={styles.toolbarButton}
-              >
-                <PickerSymbol kind="close" color={theme.color.onPrimary} />
-              </Pressable>
-            </View>
-          ) : (
-            <>
-              <Text accessibilityRole="header" style={styles.heading}>
-                {title}
-              </Text>
-              <Button
-                label={cancelLabel}
-                onPress={() => {
-                  Keyboard.dismiss();
-                  onClose();
-                }}
-              />
-            </>
-          )}
+          <View style={styles.categoryToolbar}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={backLabel}
+              onPress={() => {
+                Keyboard.dismiss();
+                onBack();
+              }}
+              style={styles.toolbarButton}
+            >
+              <PickerSymbol kind="back" color={theme.color.onPrimary} />
+            </Pressable>
+            <Text accessibilityRole="header" style={styles.toolbarTitle}>
+              {title}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={cancelLabel}
+              onPress={() => {
+                Keyboard.dismiss();
+                onClose();
+              }}
+              style={styles.toolbarButton}
+            >
+              <PickerSymbol kind="close" color={theme.color.onPrimary} />
+            </Pressable>
+          </View>
           {children}
         </ScrollView>
       </SafeAreaView>
@@ -275,15 +268,15 @@ export function CategoryPicker({
       cancelLabel={
         mode === "filter" ? "Cancel filter selection" : "Cancel selection"
       }
-      categoryNavigation={{
-        label: editor
+      backLabel={
+        editor
           ? "Back to categories"
           : state.rootId
             ? "Back to all categories"
             : mode === "filter"
               ? "Back to History"
               : "Back to transaction"
-      }}
+      }
     >
       {busy && (
         <StateNotice
@@ -559,56 +552,68 @@ export function CategoryPicker({
   );
 }
 
-export function AccountPicker({
+export function EntryAccountDropdown({
   source,
   currency,
   selectedId,
-  onSelect,
-  onClose,
-  onSettings,
   excludeId,
+  label,
+  onSelect,
   onClear,
-  title = "Choose account"
+  onClose
 }: {
-  source: AccountSource;
+  source: Pick<AccountSource, "list">;
   currency: Currency;
   selectedId: string;
-  onSelect: (id: string, rows: Account[]) => void;
-  onClose: () => void;
-  onSettings?: () => void;
   excludeId?: string;
+  label: string;
+  onSelect: (id: string, rows: Account[]) => void;
   onClear?: () => void;
-  title?: string;
+  onClose: () => void;
 }) {
   const state = useAccountPicker(
     source,
     currency,
     (id, rows) => {
-      Keyboard.dismiss();
       onSelect(id, rows);
+      onClose();
     },
     excludeId
   );
+  const options: DropdownOption<string>[] = state.matches.map((row) => ({
+    value: row.id,
+    label: `${row.name} · ${row.currency}`,
+    leading: <AccountIcon name={row.type} active />,
+    emphasized: true
+  }));
+  if (onClear && selectedId)
+    options.push({ value: "", label: "Clear account selection" });
+
   return (
-    <PickerModal title={title} onClose={onClose}>
-      <Body>Active accounts in {currency}</Body>
-      {onClear && selectedId && (
-        <Button
-          label="Clear account selection"
-          disabled={state.busy}
-          onPress={() => {
-            Keyboard.dismiss();
-            onClear();
-          }}
+    <Dropdown
+      label={label}
+      options={options}
+      selected={selectedId}
+      disabled={state.busy}
+      style={onClear && styles.dropdownEnd}
+      onSelect={(id) => {
+        if (id) void state.select(id);
+        else if (onClear) {
+          onClear();
+          onClose();
+        }
+      }}
+      onClose={onClose}
+    >
+      {(state.available.length > 6 || state.query !== "") && (
+        <Field
+          label="Search accounts"
+          value={state.query}
+          onChangeText={state.setQuery}
+          returnKeyType="search"
         />
       )}
-      <Field
-        label="Search accounts"
-        value={state.query}
-        onChangeText={state.setQuery}
-        returnKeyType="search"
-      />
-      {state.busy && (
+      {state.busy && !state.rows && (
         <StateNotice
           kind="loading"
           title="Loading accounts"
@@ -623,53 +628,26 @@ export function AccountPicker({
           onRetry={() => void state.reload()}
         />
       )}
-      {state.rows && (
-        <>
-          {!state.available.length ? (
-            <StateNotice
-              kind="empty"
-              title="No compatible accounts"
-              message="Create an active account in this draft's currency in Settings, then return here."
-            />
-          ) : (
-            !state.matches.length && (
-              <StateNotice
-                kind="empty"
-                title="No matching accounts"
-                message="Try another account name."
-              />
-            )
-          )}
-          {state.matches.map((row) => (
-            <Button
-              key={row.id}
-              label={`Account: ${row.name}${row.id === selectedId ? " (selected)" : ""}`}
-              selected={row.id === selectedId}
-              disabled={state.busy}
-              onPress={() => void state.select(row.id)}
-            />
-          ))}
-        </>
-      )}
-      <Button
-        label="Reload accounts"
-        disabled={state.busy}
-        onPress={() => void state.reload()}
-      />
-      {onSettings && (
-        <Button
-          label="Add an account in Settings"
-          onPress={() => {
-            onClose();
-            onSettings();
-          }}
+      {state.rows && !state.available.length && (
+        <StateNotice
+          kind="empty"
+          title="No compatible accounts"
+          message={`Create an active ${currency} account in Settings, then return to your draft.`}
         />
       )}
-    </PickerModal>
+      {state.available.length > 0 && !state.matches.length && (
+        <StateNotice
+          kind="empty"
+          title="No matching accounts"
+          message="Try another account name."
+        />
+      )}
+    </Dropdown>
   );
 }
 
 const styles = StyleSheet.create({
+  dropdownEnd: { alignSelf: "flex-end" },
   surface: { flex: 1, backgroundColor: theme.color.background },
   content: {
     padding: theme.space.lg,
@@ -678,15 +656,6 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 640,
     alignSelf: "center"
-  },
-  heading: {
-    color: theme.color.onPrimary,
-    fontSize: theme.font.heading,
-    fontWeight: "700",
-    minHeight: 88,
-    padding: 12,
-    borderRadius: 18,
-    backgroundColor: theme.color.primary
   },
   categoryToolbar: {
     flexDirection: "row",

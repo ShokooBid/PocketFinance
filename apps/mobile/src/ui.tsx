@@ -2,6 +2,7 @@ import { type PropsWithChildren, type ReactNode } from "react";
 import { Link, useRouter } from "expo-router";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -78,6 +79,89 @@ export function Button({
         {label}
       </Text>
     </Pressable>
+  );
+}
+
+export type DropdownOption<Value> = {
+  value: Value;
+  label: string;
+  leading?: ReactNode;
+  emphasized?: boolean;
+};
+
+export function Dropdown<Value extends string | undefined>({
+  label,
+  options,
+  selected,
+  disabled,
+  onSelect,
+  onClose,
+  style,
+  children
+}: PropsWithChildren<{
+  label: string;
+  options: readonly DropdownOption<Value>[];
+  selected: Value;
+  disabled: boolean;
+  onSelect: (value: Value) => void;
+  onClose: () => void;
+  style?: StyleProp<ViewStyle>;
+}>) {
+  return (
+    <View style={[styles.dropdown, style]} onAccessibilityEscape={onClose}>
+      {children}
+      {options.length > 0 && (
+        <ScrollView
+          accessibilityLabel={label}
+          style={styles.dropdownList}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+        >
+          {options.map((option) => {
+            const current = selected === option.value;
+            return (
+              <Pressable
+                key={option.value ?? "all"}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  Platform.OS === "web" && current
+                    ? `${option.label} (selected)`
+                    : option.label
+                }
+                accessibilityState={{ selected: current, disabled }}
+                disabled={disabled}
+                onPress={() => onSelect(option.value)}
+                style={({ pressed }) => [
+                  styles.dropdownOption,
+                  current && styles.dropdownSelected,
+                  (pressed || disabled) && styles.dropdownPressed
+                ]}
+              >
+                {option.leading}
+                <Text
+                  style={[
+                    styles.dropdownLabel,
+                    option.emphasized && styles.dropdownEmphasized
+                  ]}
+                >
+                  {option.label}
+                </Text>
+                {current && (
+                  <Text
+                    accessible={false}
+                    accessibilityElementsHidden
+                    importantForAccessibility="no-hide-descendants"
+                    style={styles.dropdownCheck}
+                  >
+                    ✓
+                  </Text>
+                )}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
+    </View>
   );
 }
 
@@ -343,6 +427,32 @@ const styles = StyleSheet.create({
     textAlign: "center"
   },
   buttonTextPrimary: { color: theme.color.onPrimary },
+  dropdown: {
+    width: "100%",
+    maxWidth: 320,
+    alignSelf: "flex-start",
+    padding: 6,
+    borderWidth: 1,
+    borderColor: theme.color.softBorder,
+    borderRadius: 16,
+    backgroundColor: theme.color.surface,
+    gap: 6
+  },
+  dropdownList: { maxHeight: 240 },
+  dropdownOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    minHeight: theme.touchTarget,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10
+  },
+  dropdownSelected: { backgroundColor: theme.color.primarySoft },
+  dropdownPressed: { opacity: 0.7 },
+  dropdownLabel: { flex: 1, color: theme.color.text, fontSize: 14 },
+  dropdownEmphasized: { fontWeight: "700" },
+  dropdownCheck: { color: theme.color.primary, fontSize: 16 },
   link: {
     color: theme.color.primary,
     backgroundColor: theme.color.surface,
