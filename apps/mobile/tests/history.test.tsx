@@ -8,7 +8,7 @@ import {
   waitFor,
   within
 } from "@testing-library/react-native";
-import { createTransport } from "../src/auth/transport";
+import { ClientFailure, createTransport } from "../src/auth/transport";
 import {
   createApiHistorySource,
   historyDateLabel,
@@ -195,6 +195,12 @@ function props(source: HistorySource): HistoryProps {
     ready: true
   };
 }
+const historyActions = {
+  onEdit: () => {},
+  onDelete: async () => {},
+  recordExists: async () => true
+};
+
 async function press(name: string | RegExp) {
   await waitFor(() =>
     expect(screen.getByRole("button", { name })).toBeEnabled()
@@ -212,7 +218,7 @@ describe("History filter selection", () => {
       <HistoryScreen
         {...config}
         initialAccountId={id(10)}
-        onSelect={() => {}}
+        {...historyActions}
       />
     );
     await press("Type: All");
@@ -314,7 +320,7 @@ describe("History filter selection", () => {
         }
       ]
     };
-    render(<HistoryScreen {...config} onSelect={() => {}} />);
+    render(<HistoryScreen {...config} {...historyActions} />);
     await press("Account: All");
     expect(
       screen.getByRole("button", { name: "Account: All", expanded: true })
@@ -408,7 +414,7 @@ describe("History filter selection", () => {
     }));
     const config = props({ list });
     config.accounts = { list: async () => accountRows };
-    render(<HistoryScreen {...config} onSelect={() => {}} />);
+    render(<HistoryScreen {...config} {...historyActions} />);
     await press("Account: All");
     await act(async () =>
       fireEvent.changeText(
@@ -439,7 +445,7 @@ describe("History filter selection", () => {
       .mockImplementation(async (filter) => page([], { applied: filter }));
     const config = props({ list });
     config.categories = { list: async () => categories };
-    render(<HistoryScreen {...config} onSelect={() => {}} />);
+    render(<HistoryScreen {...config} {...historyActions} />);
     await press("Category: All");
     await screen.findByLabelText("Search categories");
     expect(screen.queryByText("Recent categories unavailable")).toBeNull();
@@ -546,7 +552,7 @@ describe("History request coordination", () => {
     expect(consumed).toHaveBeenCalledTimes(1);
     expect(list.mock.calls[1]).toEqual([{}, {}]);
   });
-  it("renders a date-only heading and opens the selected logical record", async () => {
+  it("moves the actions to the selected row and clears them when Edit opens", async () => {
     const transfer = row(2, {
       kind: "transfer",
       type: "transfer",
@@ -555,21 +561,155 @@ describe("History request coordination", () => {
       toAccountId: id(11),
       toAccountName: "Savings"
     });
-    const config = props({ list: async () => page([row(3), transfer]) });
-    const selected = jest.fn();
-    render(<HistoryScreen {...config} onSelect={selected} />);
+    const transaction = row(3);
+    const config = props({ list: async () => page([transaction, transfer]) });
+    const edit = jest.fn();
+    render(<HistoryScreen {...config} {...historyActions} onEdit={edit} />);
     await waitFor(() =>
       expect(
         screen.getByRole("header", { name: historyDateLabel("2026-10-29") })
       ).toBeTruthy()
     );
     expect(screen.queryByText(/\bNet\b|\d+ transactions?\b/i)).toBeNull();
-    fireEvent.press(
-      screen.getByRole("button", {
-        name: /Transfer\. Transfer\. Cash → Savings/
-      })
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    await press(/^Food\. expense/);
+    expect(
+      screen.getByRole("button", { name: /^Food\. expense/, expanded: true })
+    ).toBeTruthy();
+    expect(edit).not.toHaveBeenCalled();
+    await press(/^Transfer\. Transfer\. Cash → Savings/);
+    expect(
+      screen.getByRole("button", { name: /^Food\. expense/, expanded: false })
+    ).toBeTruthy();
+    await press("Edit");
+    expect(edit).toHaveBeenNthCalledWith(1, transfer);
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+    await press(/^Food\. expense/);
+    await press("Edit");
+    expect(edit).toHaveBeenCalledTimes(2);
+    expect(edit).toHaveBeenNthCalledWith(2, transaction);
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+  });
+  it("cancels without a write and refreshes the same filters after one confirmed delete", async () => {
+    const date = `${currentMonth()}-01`;
+    const selected = row(3, { date, note: "Lunch" });
+    const remaining = row(2, { date, note: "Dinner" });
+    let items = [selected, remaining];
+    let invalidate = () => {};
+    const done = deferred<void>();
+    const list = jest.fn<HistorySource["list"]>(async (filter) =>
+      page(items, { applied: filter })
     );
-    expect(selected).toHaveBeenCalledWith(transfer);
+    const config = props({ list });
+    config.changes = {
+      subscribe: (listener) => {
+        invalidate = listener;
+        return () => {};
+      }
+    };
+    const remove = jest.fn<(row: HistoryRow) => Promise<void>>(async () => {
+      await done.promise;
+      items = [remaining];
+      invalidate();
+    });
+    render(
+      <HistoryScreen
+        {...config}
+        {...historyActions}
+        initialAccountId={selected.accountId}
+        onDelete={remove}
+      />
+    );
+    await press("Type: All");
+    await press("expense");
+    await press(/^Lunch\. expense/);
+    const filters = list.mock.lastCall?.[0];
+    expect(filters).toMatchObject({
+      accountId: selected.accountId,
+      type: "expense",
+      from: expect.any(String),
+      to: expect.any(String)
+    });
+    await press("Delete");
+    expect(
+      screen.getByRole("header", { name: "Delete transaction?" })
+    ).toBeTruthy();
+    expect(screen.getByText("Lunch")).toBeVisible();
+    await press("Cancel");
+    expect(remove).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: /^Lunch\. expense/ })
+    ).toBeTruthy();
+    await press("Delete");
+    const confirm = screen.getByRole("button", { name: "Delete" });
+    await act(async () => {
+      fireEvent.press(confirm);
+      fireEvent.press(confirm);
+    });
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith(selected);
+    expect(confirm).toBeDisabled();
+    await act(async () => done.resolve(undefined));
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+    expect(list.mock.lastCall).toEqual([filters, {}]);
+    expect(
+      screen.queryByRole("button", { name: /^Lunch\. expense/ })
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /^Dinner\. expense/ })
+    ).toBeTruthy();
+  });
+  it("keeps a failed delete retryable and checks an uncertain outcome before issuing another write", async () => {
+    const transfer = row(2, {
+      kind: "transfer",
+      type: "transfer",
+      note: "Move to savings",
+      categoryId: null,
+      categoryName: null,
+      toAccountId: id(11),
+      toAccountName: "Savings"
+    });
+    const remove = jest
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new ClientFailure("rate-limit"))
+      .mockRejectedValueOnce(new ClientFailure("network"));
+    const recordExists = jest.fn<(row: HistoryRow) => Promise<boolean>>(
+      async () => false
+    );
+    render(
+      <HistoryScreen
+        {...props({ list: async () => page([transfer]) })}
+        {...historyActions}
+        onDelete={remove}
+        recordExists={recordExists}
+      />
+    );
+    await press(/^Move to savings\. Transfer/);
+    await press("Delete");
+    expect(
+      screen.getByRole("header", { name: "Delete transfer?" })
+    ).toBeTruthy();
+    await press("Delete");
+    expect(
+      screen.getByText("Could not delete this entry. Try again.")
+    ).toBeVisible();
+    await press("Cancel");
+    expect(
+      screen.getByRole("button", { name: /^Move to savings\. Transfer/ })
+    ).toBeTruthy();
+    await press("Delete");
+    await press("Delete");
+    expect(screen.getByText(/Could not confirm deletion/)).toBeVisible();
+    await press("Cancel");
+    await press("Delete");
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+    await press("Check entry");
+    expect(recordExists).toHaveBeenCalledWith(transfer);
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(
+      screen.queryByRole("button", { name: /^Move to savings\. Transfer/ })
+    ).toBeNull();
   });
   it("ignores an older response after a confirmed finance change starts a fresh read", async () => {
     const first = deferred<HistoryPage>(),

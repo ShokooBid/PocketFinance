@@ -15,7 +15,8 @@ export const theme = {
     gradientStart: "#F63898",
     gradientEnd: "#9B80FF",
     decorationDot: "#C65CC1",
-    error: "#A32255"
+    error: "#A32255",
+    destructive: "#B4232A"
   },
   space: { sm: 8, md: 16, lg: 24 },
   radius: 22,

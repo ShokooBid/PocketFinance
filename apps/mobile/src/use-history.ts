@@ -4,6 +4,7 @@ import type { CategoryReadSource, Category } from "./category-data";
 import { currentMonth, monthRange } from "./dashboard-data";
 import {
   historyFailureMessage,
+  historyKey,
   mergeHistory,
   validHistoryFilters,
   type HistoryFilters,
@@ -212,6 +213,23 @@ export function useHistory({
     busy,
     error,
     stale,
+    removeFromPage: (row: HistoryFocus) => {
+      setPage((current) => {
+        if (!current) return current;
+        const removed = current.items.find(
+          (item) => item.kind === row.kind && item.id === row.id
+        );
+        if (!removed) return current;
+        return {
+          ...current,
+          items: current.items.filter((item) => item !== removed),
+          focusedKey:
+            current.focusedKey === historyKey(removed)
+              ? null
+              : current.focusedKey
+        };
+      });
+    },
     clear: () => {
       focusRef.current = undefined;
       consumed.current?.();

@@ -8,7 +8,9 @@ import {
   Text,
   TextInput,
   View,
-  type TextInputProps
+  type StyleProp,
+  type TextInputProps,
+  type ViewStyle
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { theme } from "./theme";
@@ -29,16 +31,18 @@ export function Button({
   selected = false,
   variant = "secondary",
   size = "default",
-  leading
+  leading,
+  style
 }: {
   label: string;
   onPress: () => void;
   hint?: string;
   disabled?: boolean;
   selected?: boolean;
-  variant?: "primary" | "secondary" | "outline";
+  variant?: "primary" | "secondary" | "outline" | "destructive";
   size?: "default" | "compact";
   leading?: ReactNode;
+  style?: StyleProp<ViewStyle>;
 }) {
   return (
     <Pressable
@@ -55,7 +59,9 @@ export function Button({
         !!leading && styles.buttonWithIcon,
         variant === "outline" && styles.buttonOutline,
         (variant === "primary" || selected) && styles.buttonPrimary,
+        variant === "destructive" && styles.buttonDestructive,
         selected && styles.buttonSelected,
+        style,
         (pressed || disabled) && styles.pressed
       ]}
     >
@@ -65,7 +71,8 @@ export function Button({
           styles.buttonText,
           size === "compact" && styles.buttonTextCompact,
           !!leading && styles.buttonTextWithIcon,
-          (variant === "primary" || selected) && styles.buttonTextPrimary
+          (variant === "primary" || variant === "destructive" || selected) &&
+            styles.buttonTextPrimary
         ]}
       >
         {label}
@@ -313,6 +320,10 @@ const styles = StyleSheet.create({
   buttonPrimary: {
     backgroundColor: theme.color.primary,
     borderColor: theme.color.primary
+  },
+  buttonDestructive: {
+    backgroundColor: theme.color.destructive,
+    borderColor: theme.color.destructive
   },
   buttonOutline: { backgroundColor: theme.color.surface },
   buttonCompact: {

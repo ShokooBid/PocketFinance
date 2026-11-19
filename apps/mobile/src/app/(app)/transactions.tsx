@@ -1,4 +1,5 @@
 import { Button, Screen, StateNotice } from "../../ui";
+import { ClientFailure } from "../../auth/transport";
 import { useCategories } from "../../category-context";
 import {
   useTransactions,
@@ -150,7 +151,27 @@ function TransactionsScreen() {
               onAccountConsumed={() =>
                 router.setParams({ accountId: undefined })
               }
-              onSelect={(row) => {
+              onDelete={(row) =>
+                (row.kind === "transfer" ? transfers : source).remove(row.id)
+              }
+              recordExists={async (row) => {
+                try {
+                  await (row.kind === "transfer" ? transfers : source).get(
+                    row.id
+                  );
+                  return true;
+                } catch (failure) {
+                  if (
+                    failure instanceof ClientFailure &&
+                    failure.kind === "unavailable"
+                  ) {
+                    changes.invalidate();
+                    return false;
+                  }
+                  throw failure;
+                }
+              }}
+              onEdit={(row) => {
                 if (selectionBusy || entry.busy || entry.uncertain) return;
                 const request = ++selection.current;
                 setSelectionError(null);
