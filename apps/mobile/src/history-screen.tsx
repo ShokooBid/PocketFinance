@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -16,27 +16,48 @@ import { CategoryIcon } from "./category-icon";
 import { categoryPath } from "./category-hierarchy";
 import { CategoryPicker } from "./finance-picker";
 import { RangeDateField } from "./date-picker";
+import { HistoryDeleteDialog } from "./history-delete-dialog";
 import {
   historyDateLabel,
   historyKey,
+  historyRecordId,
   historyRecordText,
   type HistoryRow
 } from "./history-data";
 import { useHistory, type HistoryProps } from "./use-history";
+import { useHistoryDeletion } from "./use-history-deletion";
 
 export function HistoryScreen(
   props: HistoryProps & {
-    onSelect: (row: HistoryRow) => void;
+    onEdit: (row: HistoryRow) => void;
+    onDelete: (row: HistoryRow) => Promise<void>;
+    recordExists: (row: HistoryRow) => Promise<boolean>;
     writeBlocked?: boolean;
   }
 ) {
   const state = useHistory(props);
-  const { fontScale } = useWindowDimensions();
+  const { fontScale, width } = useWindowDimensions();
   const { filter, page, busy } = state;
   const [picker, setPicker] = useState<
     "account" | "category" | "type" | "range" | null
   >(null);
   const [accountSearch, setAccountSearch] = useState("");
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const deletion = useHistoryDeletion({
+    remove: props.onDelete,
+    recordExists: props.recordExists,
+    onRemoved: (row) => {
+      setExpandedKey(null);
+      state.removeFromPage(row);
+    }
+  });
+  useEffect(() => {
+    if (
+      expandedKey &&
+      !page?.items.some((row) => historyRecordId(row) === expandedKey)
+    )
+      setExpandedKey(null);
+  }, [expandedKey, page]);
   const category = state.categoryChoices.find(
     (row) => row.id === filter.categoryId
   );
@@ -46,7 +67,7 @@ export function HistoryScreen(
   const dates = [...new Set(page?.items.map((row) => row.date) ?? [])];
   const disabled = busy || !props.ready || !props.active;
   const dropdown = picker === "account" || picker === "type";
-  const modalOpen = picker === "category";
+  const modalOpen = picker === "category" || deletion.row !== null;
   function open(value: typeof picker) {
     setAccountSearch("");
     setPicker((current) => (current === value ? null : value));
@@ -274,14 +295,28 @@ export function HistoryScreen(
               .filter((row) => row.date === date)
               .map((row) => (
                 <HistoryRecord
-                  key={`${row.kind}_${row.id}`}
+                  key={historyRecordId(row)}
                   row={row}
                   highlighted={page.focusedKey === historyKey(row)}
+                  expanded={expandedKey === historyRecordId(row)}
+                  actionWidth={176 * Math.max(1, fontScale)}
+                  stackActions={width <= 375 || fontScale > 1.3}
                   {...(page.applied.accountId
                     ? { statementAccountId: page.applied.accountId }
                     : {})}
                   disabled={disabled || !!props.writeBlocked}
-                  onPress={() => props.onSelect(row)}
+                  onPress={() =>
+                    setExpandedKey((current) =>
+                      current === historyRecordId(row)
+                        ? null
+                        : historyRecordId(row)
+                    )
+                  }
+                  onEdit={() => {
+                    setExpandedKey(null);
+                    props.onEdit(row);
+                  }}
+                  onDelete={() => deletion.open(row)}
                 />
               ))}
           </View>
@@ -307,6 +342,17 @@ export function HistoryScreen(
           }}
           onClear={clearCategory}
           onClose={() => setPicker(null)}
+        />
+      )}
+      {deletion.row && (
+        <HistoryDeleteDialog
+          row={deletion.row}
+          busy={deletion.busy}
+          needsCheck={deletion.needsCheck}
+          error={deletion.error}
+          writeBlocked={!!props.writeBlocked || !props.ready || !props.active}
+          onCancel={deletion.cancel}
+          onConfirm={() => void deletion.confirm()}
         />
       )}
     </>
@@ -388,70 +434,143 @@ function HistoryOption({
 function HistoryRecord({
   row,
   highlighted,
+  expanded,
+  actionWidth,
+  stackActions,
   disabled,
   onPress,
+  onEdit,
+  onDelete,
   statementAccountId
 }: {
   row: HistoryRow;
   highlighted: boolean;
+  expanded: boolean;
+  actionWidth: number;
+  stackActions: boolean;
   disabled: boolean;
   onPress: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
   statementAccountId?: string;
 }) {
   const transfer = row.kind === "transfer";
   const { category, description, accounts, amount, typeLabel } =
     historyRecordText(row, statementAccountId);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${highlighted ? "Saved record. " : ""}${description}. ${typeLabel}. ${accounts}. ${category ?? ""}. ${amount}. ${historyDateLabel(row.date)}`}
-      accessibilityHint="Open this record in the editor"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.row,
-        highlighted && styles.highlighted,
-        pressed && styles.pressed
+  const inlineActions = expanded && !stackActions;
+  const amountText = (
+    <Text
+      numberOfLines={inlineActions ? undefined : 1}
+      style={[
+        styles.amount,
+        inlineActions && styles.inlineAmount,
+        row.type === "expense" && styles.expense,
+        row.type === "income" && styles.income
       ]}
     >
-      {transfer ? (
-        <View style={styles.transferIcon}>
-          <Svg width={32} height={32} viewBox="0 0 24 24" accessible={false}>
-            <Path
-              d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"
-              stroke={theme.color.primary}
-              strokeWidth={2}
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </Svg>
-        </View>
-      ) : (
-        <CategoryIcon iconKey={row.iconKey ?? undefined} size={44} />
-      )}
-      <View style={styles.rowText}>
-        <Text numberOfLines={1} style={styles.description}>
-          {description}
-        </Text>
-        <Text numberOfLines={1} style={styles.secondary}>
-          {accounts}
-          {category ? ` · ${category}` : ""}
-        </Text>
-        {highlighted && <Text style={styles.notice}>Saved record</Text>}
-      </View>
-      <Text
-        numberOfLines={1}
-        style={[
-          styles.amount,
-          row.type === "expense" && styles.expense,
-          row.type === "income" && styles.income
+      {amount}
+    </Text>
+  );
+  return (
+    <View
+      style={[
+        styles.row,
+        highlighted && styles.highlighted,
+        expanded && stackActions && styles.stackedRow
+      ]}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${highlighted ? "Saved record. " : ""}${description}. ${typeLabel}. ${accounts}. ${category ?? ""}. ${amount}. ${historyDateLabel(row.date)}`}
+        accessibilityHint={
+          expanded ? "Hide record actions" : "Show record actions"
+        }
+        accessibilityState={{ disabled, expanded }}
+        disabled={disabled}
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.rowContent,
+          expanded && stackActions && styles.stackedContent,
+          pressed && styles.pressed
         ]}
       >
-        {amount}
-      </Text>
-    </Pressable>
+        {transfer ? (
+          <View style={styles.transferIcon}>
+            <Svg width={32} height={32} viewBox="0 0 24 24" accessible={false}>
+              <Path
+                d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"
+                stroke={theme.color.primary}
+                strokeWidth={2}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+          </View>
+        ) : (
+          <CategoryIcon iconKey={row.iconKey ?? undefined} size={44} />
+        )}
+        <View style={styles.rowText}>
+          <Text numberOfLines={expanded ? 2 : 1} style={styles.description}>
+            {description}
+          </Text>
+          <Text numberOfLines={expanded ? 2 : 1} style={styles.secondary}>
+            {accounts}
+            {category ? ` · ${category}` : ""}
+          </Text>
+          {inlineActions && amountText}
+          {highlighted && <Text style={styles.notice}>Saved record</Text>}
+        </View>
+        {!inlineActions && amountText}
+      </Pressable>
+      {expanded && (
+        <View
+          style={[
+            styles.recordActions,
+            { width: actionWidth },
+            stackActions && styles.stackedActions
+          ]}
+        >
+          <Button
+            label="Edit"
+            size="compact"
+            style={styles.recordAction}
+            disabled={disabled}
+            onPress={onEdit}
+            leading={<RecordActionIcon kind="edit" />}
+          />
+          <Button
+            label="Delete"
+            size="compact"
+            variant="destructive"
+            style={styles.recordAction}
+            disabled={disabled}
+            onPress={onDelete}
+            leading={<RecordActionIcon kind="delete" />}
+          />
+        </View>
+      )}
+    </View>
+  );
+}
+
+function RecordActionIcon({ kind }: { kind: "edit" | "delete" }) {
+  const edit = kind === "edit";
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" accessible={false}>
+      <Path
+        d={
+          edit
+            ? "m14 6 4 4M4 20l4-.8L20 7l-4-4L4.8 15.2 4 20Z"
+            : "M4 7h16m-13 0 1 13h8l1-13M9 7V4h6v3m-5 4v5m4-5v5"
+        }
+        stroke={edit ? theme.color.primary : theme.color.onPrimary}
+        strokeWidth={2}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
   );
 }
 const styles = StyleSheet.create({
@@ -529,6 +648,23 @@ const styles = StyleSheet.create({
     borderTopColor: theme.color.softBorder,
     backgroundColor: theme.color.surface
   },
+  stackedRow: { flexDirection: "column", alignItems: "stretch" },
+  rowContent: {
+    flex: 1,
+    minHeight: 44,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  stackedContent: { flex: 0 },
+  recordActions: {
+    flexDirection: "row",
+    maxWidth: "100%",
+    gap: 6
+  },
+  stackedActions: { alignSelf: "flex-end" },
+  recordAction: { flex: 1, minWidth: 0, paddingHorizontal: 8 },
   rowText: { flex: 1, gap: 2, minWidth: 0 },
   description: { color: theme.color.text, fontWeight: "700", fontSize: 15 },
   secondary: { fontSize: 12, color: theme.color.muted },
@@ -539,6 +675,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     textAlign: "right"
   },
+  inlineAmount: { textAlign: "left" },
   expense: { color: theme.color.error },
   income: { color: "#176441" },
   highlighted: {

@@ -99,6 +99,7 @@ export interface HistorySource {
 }
 export const historyKey = (row: Pick<HistoryRow, "date" | "id" | "kind">) =>
   `${row.date}_${row.id}_${row.kind}`;
+export const historyRecordId = (row: HistoryFocus) => `${row.kind}_${row.id}`;
 export function validHistoryFilters(filter: HistoryFilters) {
   return (
     historyFilters.safeParse(filter).success &&
