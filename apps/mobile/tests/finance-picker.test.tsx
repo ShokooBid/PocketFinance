@@ -7,7 +7,7 @@ import {
   waitFor
 } from "@testing-library/react-native";
 import { Modal } from "react-native";
-import { AccountPicker, CategoryPicker } from "../src/finance-picker";
+import { CategoryPicker, EntryAccountDropdown } from "../src/finance-picker";
 import {
   CategoryFailure,
   createDemoCategorySource,
@@ -445,17 +445,22 @@ describe("category picker", () => {
   });
 });
 
-describe("account picker", () => {
+describe("entry account dropdown", () => {
   it("searches active compatible accounts and exposes selection through text and accessibility", async () => {
     const all = await accounts.list();
     const cad = all.find((row) => row.id === accountId("CAD"))!;
     const onSelect = jest.fn();
     render(
-      <AccountPicker
+      <EntryAccountDropdown
         source={{
           ...accounts,
           list: async () => [
             ...all,
+            ...Array.from({ length: 6 }, (_, index) => ({
+              ...cad,
+              id: `cad-account-${index}`,
+              name: `Other CAD ${index}`
+            })),
             {
               ...cad,
               id: "archived",
@@ -465,54 +470,54 @@ describe("account picker", () => {
           ]
         }}
         currency="CAD"
+        label="Account options"
         selectedId={cad.id}
         onSelect={onSelect}
         onClose={() => {}}
       />
     );
     await screen.findByRole("button", {
-      name: "Account: Test CAD (selected)",
+      name: "Test CAD · CAD",
       selected: true
     });
-    expect(
-      screen.queryByRole("button", { name: "Account: Test USD" })
-    ).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "Account: Old CAD" })
-    ).toBeNull();
+    expect(screen.getByText("Test CAD · CAD")).toHaveStyle({
+      fontWeight: "700"
+    });
+    expect(screen.queryByRole("button", { name: "Test USD · USD" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Old CAD · CAD" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "All accounts" })).toBeNull();
     await field("Search accounts", "missing");
     expect(screen.getByText("No matching accounts")).toBeVisible();
     await field("Search accounts", "test cad");
-    await press("Account: Test CAD (selected)");
+    await press("Test CAD · CAD");
     expect(onSelect).toHaveBeenCalledWith(cad.id, expect.any(Array));
   });
 
-  it("rejects an archive-while-open race and permits a Settings detour from the empty state", async () => {
+  it("rejects an archive-while-open race and shows the resulting empty state", async () => {
     const row = (await accounts.list())[0]!;
     const list = jest
       .fn<typeof accounts.list>()
       .mockResolvedValueOnce([row])
       .mockResolvedValue([{ ...row, archivedAt: "2026-11-04T00:00:00Z" }]);
     const onSelect = jest.fn(),
-      onClose = jest.fn(),
-      onSettings = jest.fn();
+      onClose = jest.fn();
     render(
-      <AccountPicker
+      <EntryAccountDropdown
         source={{ ...accounts, list }}
         currency={row.currency}
+        label="Account options"
         selectedId=""
         onSelect={onSelect}
         onClose={onClose}
-        onSettings={onSettings}
       />
     );
-    await press(`Account: ${row.name}`);
+    await press(`${row.name} · ${row.currency}`);
     expect(onSelect).not.toHaveBeenCalled();
     expect(screen.getByText("No compatible accounts")).toBeVisible();
     expect(screen.getByText(/This account is no longer active/)).toBeVisible();
-    await press("Add an account in Settings");
-    expect(onClose).toHaveBeenCalledTimes(1);
-    expect(onSettings).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("button", { name: "Add an account in Settings" })
+    ).toBeNull();
   });
 
   it("reports a read failure and ignores late selection reads after closing", async () => {
@@ -526,9 +531,10 @@ describe("account picker", () => {
     const onSelect = jest.fn(),
       onClose = jest.fn();
     const view = render(
-      <AccountPicker
+      <EntryAccountDropdown
         source={{ ...accounts, list }}
         currency="CAD"
+        label="Account options"
         selectedId=""
         onSelect={onSelect}
         onClose={onClose}
@@ -536,8 +542,13 @@ describe("account picker", () => {
     );
     await screen.findByText("Account selection needs attention");
     await press("Try again");
-    await press("Account: Test CAD");
-    await press("Cancel selection");
+    await press("Test CAD · CAD");
+    await act(async () => {
+      fireEvent(
+        screen.getByLabelText("Account options"),
+        "accessibilityEscape"
+      );
+    });
     view.unmount();
     await act(async () => {
       pending.resolve(rows);
@@ -558,27 +569,26 @@ it("excludes the other transfer account and rechecks archival before accepting a
   let rows = [...all, to];
   const onSelect = jest.fn<(id: string, rows: Account[]) => void>();
   render(
-    <AccountPicker
+    <EntryAccountDropdown
       source={{ ...accounts, list: async () => rows }}
       currency="CAD"
       selectedId=""
       excludeId={from.id}
-      title="Choose To Account"
+      label="To account options"
       onClose={() => {}}
       onSelect={onSelect}
     />
   );
-  await screen.findByRole("button", { name: "Account: CAD savings" });
+  await screen.findByRole("button", { name: "CAD savings · CAD" });
+  expect(screen.queryByLabelText("Search accounts")).toBeNull();
   expect(
-    screen.queryByRole("button", { name: `Account: ${from.name}` })
+    screen.queryByRole("button", { name: `${from.name} · ${from.currency}` })
   ).toBeNull();
-  expect(
-    screen.queryByRole("button", { name: "Account: Test JPY" })
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Test JPY · JPY" })).toBeNull();
   rows = rows.map((row) =>
     row.id === to.id ? { ...row, archivedAt: new Date().toISOString() } : row
   );
-  await press("Account: CAD savings");
+  await press("CAD savings · CAD");
   expect(onSelect).not.toHaveBeenCalled();
   expect(
     await screen.findByText("Account selection needs attention")

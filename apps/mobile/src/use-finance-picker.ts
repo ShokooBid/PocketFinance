@@ -15,7 +15,7 @@ import {
 import type { Currency, Transaction } from "./transaction-data";
 import { ClientFailure } from "./auth/transport";
 
-// Each modal owns one serialized request lifecycle. Closing it invalidates every
+// Each picker owns one serialized request lifecycle. Closing it invalidates every
 // pending callback, including a create whose response arrives after cancellation.
 function usePickerTask(message: (error: unknown) => string) {
   const live = useRef(false);
@@ -192,7 +192,7 @@ const accountFailure = (error: unknown) =>
     ? "This account is no longer active or uses a different currency. Choose an active compatible account."
     : "Accounts could not be refreshed. Your draft is preserved. Try again.";
 export function useAccountPicker(
-  source: AccountSource,
+  source: Pick<AccountSource, "list">,
   currency: Currency,
   onSelect: (id: string, rows: Account[]) => void,
   excludeId?: string

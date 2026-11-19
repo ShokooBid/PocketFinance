@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -10,7 +9,7 @@ import {
   type ViewStyle
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import { Body, Button, Field, StateNotice } from "./ui";
+import { Body, Button, Dropdown, Field, StateNotice } from "./ui";
 import { theme } from "./theme";
 import { CategoryIcon } from "./category-icon";
 import { categoryPath } from "./category-hierarchy";
@@ -66,7 +65,6 @@ export function HistoryScreen(
   );
   const dates = [...new Set(page?.items.map((row) => row.date) ?? [])];
   const disabled = busy || !props.ready || !props.active;
-  const dropdown = picker === "account" || picker === "type";
   const modalOpen = picker === "category" || deletion.row !== null;
   function open(value: typeof picker) {
     setAccountSearch("");
@@ -131,76 +129,54 @@ export function HistoryScreen(
             ]}
           />
         </View>
-        {dropdown && (
-          <View
-            style={[styles.dropdown, picker === "type" && styles.typeDropdown]}
-            onAccessibilityEscape={() => setPicker(null)}
+        {picker === "account" && (
+          <Dropdown
+            label="Account filter options"
+            options={[
+              { value: undefined, label: "All accounts" },
+              ...state.accountChoices
+                .filter((row) =>
+                  row.name
+                    .toLocaleLowerCase()
+                    .includes(accountSearch.toLocaleLowerCase())
+                )
+                .map((row) => ({
+                  value: row.id,
+                  label: `${row.name} · ${row.currency}${row.archivedAt ? " (archived)" : ""}`
+                }))
+            ]}
+            selected={filter.accountId}
+            disabled={disabled}
+            onClose={() => setPicker(null)}
+            onSelect={(accountId) => {
+              setPicker(null);
+              state.updateFilters({ accountId });
+            }}
           >
-            {picker === "account" && state.accountChoices.length > 6 && (
+            {state.accountChoices.length > 6 && (
               <Field
                 label="Search account choices"
                 value={accountSearch}
                 onChangeText={setAccountSearch}
               />
             )}
-            <ScrollView
-              accessibilityLabel={
-                picker === "account"
-                  ? "Account filter options"
-                  : "Type filter options"
-              }
-              style={styles.dropdownList}
-              keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled
-            >
-              {picker === "account" ? (
-                <>
-                  <HistoryOption
-                    label="All accounts"
-                    selected={!filter.accountId}
-                    disabled={disabled}
-                    onPress={() => {
-                      setPicker(null);
-                      state.updateFilters({ accountId: undefined });
-                    }}
-                  />
-                  {state.accountChoices
-                    .filter((row) =>
-                      row.name
-                        .toLocaleLowerCase()
-                        .includes(accountSearch.toLocaleLowerCase())
-                    )
-                    .map((row) => (
-                      <HistoryOption
-                        key={row.id}
-                        label={`${row.name} · ${row.currency}${row.archivedAt ? " (archived)" : ""}`}
-                        selected={row.id === filter.accountId}
-                        disabled={disabled}
-                        onPress={() => {
-                          setPicker(null);
-                          state.updateFilters({ accountId: row.id });
-                        }}
-                      />
-                    ))}
-                </>
-              ) : (
-                ([undefined, "income", "expense", "transfer"] as const).map(
-                  (type) => (
-                    <HistoryOption
-                      key={type ?? "all"}
-                      label={type ?? "All types"}
-                      selected={filter.type === type}
-                      disabled={disabled}
-                      onPress={() => {
-                        setPicker(null);
-                        state.updateFilters({ type });
-                      }}
-                    />
-                  )
-                )
-              )}
-            </ScrollView>
-          </View>
+          </Dropdown>
+        )}
+        {picker === "type" && (
+          <Dropdown
+            label="Type filter options"
+            options={(
+              [undefined, "income", "expense", "transfer"] as const
+            ).map((value) => ({ value, label: value ?? "All types" }))}
+            selected={filter.type}
+            disabled={disabled}
+            style={styles.typeDropdown}
+            onClose={() => setPicker(null)}
+            onSelect={(type) => {
+              setPicker(null);
+              state.updateFilters({ type });
+            }}
+          />
         )}
         {category && !category.parentId && (
           <HistoryPill
@@ -398,39 +374,6 @@ function HistoryPill({
     </Pressable>
   );
 }
-function HistoryOption({
-  label,
-  selected,
-  disabled,
-  onPress
-}: {
-  label: string;
-  selected: boolean;
-  disabled: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ selected, disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.dropdownOption,
-        selected && styles.selectedOption,
-        (pressed || disabled) && styles.pressed
-      ]}
-    >
-      <Text style={styles.optionText}>{label}</Text>
-      {selected && (
-        <Text accessible={false} style={styles.optionCheck}>
-          ✓
-        </Text>
-      )}
-    </Pressable>
-  );
-}
 function HistoryRecord({
   row,
   highlighted,
@@ -577,31 +520,7 @@ const styles = StyleSheet.create({
   section: { gap: 10, marginHorizontal: -8 },
   filterBar: { flexDirection: "row", gap: 6 },
   filterBarWrap: { flexWrap: "wrap" },
-  dropdown: {
-    width: "100%",
-    maxWidth: 320,
-    alignSelf: "flex-start",
-    padding: 6,
-    borderWidth: 1,
-    borderColor: theme.color.softBorder,
-    borderRadius: 16,
-    backgroundColor: theme.color.surface,
-    gap: 6
-  },
   typeDropdown: { maxWidth: 200, alignSelf: "center" },
-  dropdownList: { maxHeight: 240 },
-  dropdownOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    minHeight: theme.touchTarget,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10
-  },
-  selectedOption: { backgroundColor: theme.color.primarySoft },
-  optionText: { flex: 1, color: theme.color.text, fontSize: 14 },
-  optionCheck: { color: theme.color.primary, fontSize: 16 },
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: 14 },
   pill: {
     minHeight: 42,
