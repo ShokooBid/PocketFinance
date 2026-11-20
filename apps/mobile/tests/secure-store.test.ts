@@ -14,18 +14,25 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 describe("platform credential storage", () => {
-  it("stores the complete rotation record as one device-only secure item", async () => {
+  it("stores the rotation record as one device-only item and reads legacy records", async () => {
     jest.replaceProperty(Platform, "OS", "ios");
-    jest
-      .mocked(SecureStore.getItemAsync)
-      .mockResolvedValueOnce(JSON.stringify(stored()));
-    await credentialStore.write(stored());
+    const session = stored();
+    jest.mocked(SecureStore.getItemAsync).mockResolvedValueOnce(
+      JSON.stringify({
+        ...session,
+        credentials: {
+          ...session.credentials,
+          sessionExpiresAt: "2026-10-27T12:00:00Z"
+        }
+      })
+    );
+    await credentialStore.write(session);
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
       "pocketfinance.session.v1",
-      JSON.stringify(stored()),
+      JSON.stringify(session),
       { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY }
     );
-    expect(await credentialStore.read()).toEqual(stored());
+    expect(await credentialStore.read()).toEqual(session);
     await credentialStore.clear();
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(
       "pocketfinance.session.v1",

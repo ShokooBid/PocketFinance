@@ -17,7 +17,8 @@ backend boundary.
 The sign-in screen offers email/password and Continue with Google. Both lead to
 the same PocketFinance account model and session mechanism. Closing/reopening the
 app normally restores the session without another login. Logout, revocation,
-session expiry, or missing secure credentials require authentication again.
+or missing secure credentials require authentication again. Older clients retain
+the bounded session policy described below.
 Google cancellation leaves the sign-in screen usable; provider failure does not
 disable email/password. Biometric app lock, MFA, password recovery, automatic
 account merging, and unlinking login methods remain separate work.
@@ -28,8 +29,8 @@ account merging, and unlinking login methods remain separate work.
 | --- | --- |
 | `User` | Stable owner of finance data. `passwordHash` is nullable for Google-only users. `emailVerifiedAt` records contact verification when established; `disabledAt` blocks access in the future service. |
 | `AuthIdentity` | A Google `sub` linked to one user. `(provider, providerSubject)` is unique globally; `(userId, provider)` permits one Google account per PocketFinance user. No Google passwords or provider access/refresh tokens are stored. |
-| `Session` | One device login and refresh-token family. `expiresAt`, `revokedAt`, and `lastUsedAt` support expiry, inactivity, logout, and reuse revocation. |
-| `RefreshToken` | One issued PocketFinance refresh token, stored only as a unique SHA-256 hex hash. `consumedAt` preserves rotation history; ownership comes through `sessionId`. |
+| `Session` | One device login and refresh-token family. `expiresAt` is null for persistent sessions. `revokedAt` records logout or reuse revocation, and `lastUsedAt` is the inactivity anchor for bounded sessions. |
+| `RefreshToken` | One issued PocketFinance refresh token, stored only as a unique SHA-256 hex hash. `expiresAt` is null for persistent credentials. `consumedAt` preserves rotation history, with ownership defined by `sessionId`. |
 
 Password hashes use a slow adaptive password algorithm (planned Argon2id).
 Refresh tokens instead have at least 256 bits of cryptographically random entropy,
@@ -94,29 +95,34 @@ Google, preserving their existing user ID and finance records.
 These are application design choices informed by Google's
 [OpenID Connect verification guidance](https://developers.google.com/identity/openid-connect/openid-connect).
 
-## Persistent sessions and rotation — Issues #7 and #11
+## Persistent sessions and rotation
 
-Initial policy: access tokens last **15 minutes**, sessions have a **30-day absolute
-lifetime**, and expire after **7 days without successful refresh**. Keep these
-server-configurable; refresh never extends the absolute session lifetime. Token
-expiry must not exceed session expiry. `lastUsedAt ?? createdAt` supplies the
-inactivity anchor. These defaults are now implemented as server configuration.
+Updated native clients request persistent sessions on password login, registration,
+Google login and normal refresh with `X-PocketFinance-Session-Policy: persistent`.
+The response uses `sessionExpiresAt: null` for a persistent session. Access tokens
+still expire after **15 minutes** by default, and every protected request checks
+session ownership, revocation, and user disabled state on the server.
 
-Access-token claims include PocketFinance user ID and session ID, issuer, audience,
-issued time and expiry. Protected routes validate them and check session ownership,
-revocation, expiry/inactivity and user disabled state. That lookup makes logout
-and disabling effective immediately rather than waiting for a JWT to expire.
+Clients using the original credential format keep the configured absolute and
+inactivity limits, which default to **30 days** and **7 days without successful
+refresh**. On the first successful refresh from an updated native client, the API
+checks the family's existing deadlines, consumes its token, and upgrades the
+family in the same transaction. An expired, revoked, or already deleted family
+requires sign-in. The migration leaves existing rows and deadlines in place.
+Apply it and update all API instances before distributing the updated native app.
 
 During refresh, in one database transaction: verify the session, atomically mark
 an unconsumed token consumed, insert its replacement hash, and update session use.
 A concurrent loser or replay of a consumed token revokes that session/family.
 Commit the revocation before returning an auth error; throwing inside the same
 transaction must not accidentally roll it back. Retain consumed hashes until the
-session is no longer usable; a cleanup job deletes expired families in dependency
-order. No raw refresh token, authorization header, or Google proof belongs in logs.
+session is no longer usable. Cleanup removes revoked families, expired bounded
+families, and expired challenges. No raw refresh token, authorization header, or
+Google proof belongs in logs.
 
-The mobile app stores persistent credentials in Expo SecureStore and restores
-them before displaying authenticated navigation. API requests share a single
+The mobile app stores credentials and the access-token deadline in Expo SecureStore
+and leaves session expiry to the API. It restores and verifies credentials before
+displaying authenticated navigation. API requests share a single
 in-flight refresh operation and retry at most once. Never store credentials in
 AsyncStorage or ordinary persisted state. Logout revokes the server session and
 clears local credentials; Google account sign-out alone is insufficient.
@@ -125,11 +131,18 @@ A definitive invalid/revoked response clears the session. A network failure or
 provider/API outage preserves credentials and presents a retry state. A lost
 refresh response is ambiguous: strict rotation may require sign-in again rather
 than blindly replaying the old token. Do not implement an unbounded auto-refresh
-loop. Offline logout clears local state immediately and explains that server-side
-revocation could not be confirmed; server expiry still bounds the old session.
+loop. If the server cannot confirm logout, the app clears local credentials and
+reports that the server session may still be active. A later confirmed sign-out
+on all devices revokes any remaining sessions for that account.
 
 Rotation/reuse decisions follow [OAuth security best current practice](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14).
-The token rows added here make that behavior possible but do not implement it.
+
+For native verification on a development build, use a disposable local API with
+`ACCESS_TTL_SECONDS=30`, `SESSION_IDLE_SECONDS=45`, and `SESSION_TTL_SECONDS=60`.
+Sign in, close the app, wait past 60 seconds, then reopen and confirm that a
+protected screen loads through silent refresh. Repeat with two devices to verify
+that device sign-out revokes only its session and all-device sign-out revokes both.
+Revoke a new session on the test server and confirm that reopening prompts for sign-in.
 
 ## Provider setup and mobile builds
 

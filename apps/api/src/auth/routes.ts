@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { ApiError, invalidCredentials } from "../errors.js";
 import { tokenHash } from "./crypto.js";
-import type { AuthService, Principal } from "./service.js";
+import type { AuthService, Principal, SessionPolicy } from "./service.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -56,8 +56,14 @@ const tokens = z.object({
   refreshToken: z.string(),
   tokenType: z.literal("Bearer"),
   accessExpiresAt: z.iso.datetime(),
-  sessionExpiresAt: z.iso.datetime()
+  sessionExpiresAt: z.iso.datetime().nullable()
 });
+// Credential format opt-in. This header does not authenticate the device.
+const sessionPolicyHeader = "x-pocketfinance-session-policy";
+const sessionPolicy = (request: FastifyRequest): SessionPolicy =>
+  request.headers[sessionPolicyHeader] === "persistent"
+    ? "persistent"
+    : "bounded";
 const ok = z.object({ ok: z.literal(true) });
 const challengeResponse = z.object({
   challengeId: z.uuid(),
@@ -100,13 +106,22 @@ export function registerAuthRoutes(
   };
   const schema = { tags: ["Authentication"], response: errors };
   const secured = { ...schema, security: [{ bearerAuth: [] }] };
+  const credentialRequest = {
+    ...schema,
+    headers: z.looseObject({
+      [sessionPolicyHeader]: z
+        .string()
+        .optional()
+        .describe('Send "persistent" to opt in to a null sessionExpiresAt.')
+    })
+  };
 
   app.post(
     "/v1/auth/register",
     {
       preHandler: accountLimit,
       schema: {
-        ...schema,
+        ...credentialRequest,
         body: z.strictObject({ email, password }),
         response: { ...errors, 201: tokens }
       }
@@ -114,30 +129,42 @@ export function registerAuthRoutes(
     async (request, reply) =>
       reply
         .code(201)
-        .send(await auth.register(request.body.email, request.body.password))
+        .send(
+          await auth.register(
+            request.body.email,
+            request.body.password,
+            sessionPolicy(request)
+          )
+        )
   );
   app.post(
     "/v1/auth/login",
     {
       preHandler: accountLimit,
       schema: {
-        ...schema,
+        ...credentialRequest,
         body: loginInput,
         response: { ...errors, 200: tokens }
       }
     },
-    async (request) => auth.login(request.body.email, request.body.password)
+    async (request) =>
+      auth.login(
+        request.body.email,
+        request.body.password,
+        sessionPolicy(request)
+      )
   );
   app.post(
     "/v1/auth/refresh",
     {
       schema: {
-        ...schema,
+        ...credentialRequest,
         body: z.strictObject({ refreshToken: nonce }),
         response: { ...errors, 200: tokens }
       }
     },
-    async (request) => auth.refresh(request.body.refreshToken)
+    async (request) =>
+      auth.refresh(request.body.refreshToken, sessionPolicy(request))
   );
   app.post(
     "/v1/auth/google/challenges",
@@ -166,12 +193,12 @@ export function registerAuthRoutes(
     "/v1/auth/google",
     {
       schema: {
-        ...schema,
+        ...credentialRequest,
         body: googleInput,
         response: { ...errors, 200: tokens }
       }
     },
-    async (request) => auth.googleLogin(request.body)
+    async (request) => auth.googleLogin(request.body, sessionPolicy(request))
   );
   app.post(
     "/v1/auth/google/link",

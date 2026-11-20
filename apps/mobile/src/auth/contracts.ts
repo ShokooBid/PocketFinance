@@ -6,8 +6,7 @@ export const credentialsSchema = z.object({
   accessToken: z.string().min(1).max(16384),
   refreshToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   tokenType: z.literal("Bearer"),
-  accessExpiresAt: z.iso.datetime(),
-  sessionExpiresAt: z.iso.datetime()
+  accessExpiresAt: z.iso.datetime()
 });
 export const storedSessionSchema = z.object({
   version: z.literal(1),

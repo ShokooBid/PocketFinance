@@ -75,10 +75,6 @@ export function createSessionController(
     if (refreshFlight) return refreshFlight;
     if (!saved) throw new ClientFailure("invalid");
     if (saved.refreshPending) throw new ClientFailure("ambiguous");
-    if (Date.parse(saved.credentials.sessionExpiresAt) <= now()) {
-      await invalidate(generation);
-      throw new ClientFailure("invalid");
-    }
     const pending = { ...saved, refreshPending: true };
     saved = pending;
     const work = async () => {
@@ -91,7 +87,9 @@ export function createSessionController(
           "POST",
           "/v1/auth/refresh",
           credentialsSchema,
-          { refreshToken: pending.credentials.refreshToken }
+          { refreshToken: pending.credentials.refreshToken },
+          undefined,
+          "persistent"
         );
         current(generation);
         const replacement: StoredSession = {
@@ -245,10 +243,6 @@ export function createSessionController(
             publish({ status: "signed-out" });
             return;
           }
-          if (Date.parse(saved.credentials.sessionExpiresAt) <= now()) {
-            await invalidate(generation);
-            return;
-          }
           if (saved.refreshPending) throw new ClientFailure("ambiguous");
           await validate(generation);
         } catch (error) {
@@ -290,7 +284,9 @@ export function createSessionController(
             "POST",
             `/v1/auth/${method}`,
             credentialsSchema,
-            body
+            body,
+            undefined,
+            "persistent"
           );
           current(generation);
           const session: StoredSession = {
@@ -444,7 +440,7 @@ export function createSessionController(
               : "Signed out."
             : allSessions
               ? "Signed out on this device. Sign-out on all devices could not be confirmed; other sessions may remain active."
-              : "Signed out on this device. Server revocation could not be confirmed; the old session remains bounded by server expiry."
+              : "Signed out on this device. Server revocation could not be confirmed. The server session may still be active."
         });
       }),
     enterDemo() {

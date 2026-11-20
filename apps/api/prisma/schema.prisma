@@ -101,7 +101,7 @@ model AuthIdentity {
 model Session {
   id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId            String          @db.Uuid
-  expiresAt         DateTime        @db.Timestamptz(3)
+  expiresAt         DateTime?       @db.Timestamptz(3)
   revokedAt         DateTime?       @db.Timestamptz(3)
   lastUsedAt        DateTime?       @db.Timestamptz(3)
   reauthenticatedAt DateTime?       @db.Timestamptz(3)
@@ -130,12 +130,12 @@ model AuthChallenge {
   @@index([sessionId])
 }
 
-// Retain consumed hashes until the session expires to detect rotation replay.
+// Retain consumed hashes while the session is usable to detect rotation replay.
 model RefreshToken {
   id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   sessionId  String    @db.Uuid
   tokenHash  String    @unique @db.VarChar(64)
-  expiresAt  DateTime  @db.Timestamptz(3)
+  expiresAt  DateTime? @db.Timestamptz(3)
   consumedAt DateTime? @db.Timestamptz(3)
   createdAt  DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt  DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
