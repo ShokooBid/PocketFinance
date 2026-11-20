@@ -26,10 +26,11 @@ type Tokens = {
   accessToken: string;
   refreshToken: string;
   accessExpiresAt: string;
-  sessionExpiresAt: string;
+  sessionExpiresAt: string | null;
 };
 type Challenge = { challengeId: string; nonce: string };
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
+const persistentHeaders = { "x-pocketfinance-session-policy": "persistent" };
 const uniqueEmail = () => `${randomUUID()}@example.invalid`;
 
 beforeAll(async () => {
@@ -55,16 +56,29 @@ afterAll(async () => {
   }
 });
 
-async function post(url: string, payload: object, access?: string) {
+async function post(
+  url: string,
+  payload: object,
+  access?: string,
+  headers?: Record<string, string>
+) {
   return app.inject({
     method: "POST",
     url: `/v1/auth/${url}`,
     payload,
-    headers: access ? bearer(access) : {}
+    headers: { ...(access ? bearer(access) : {}), ...headers }
   });
 }
-async function register(email = uniqueEmail()) {
-  const response = await post("register", { email, password });
+async function register(
+  email = uniqueEmail(),
+  headers?: Record<string, string>
+) {
+  const response = await post(
+    "register",
+    { email, password },
+    undefined,
+    headers
+  );
   expect(response.statusCode, response.body).toBe(201);
   return { tokens: response.json<Tokens>(), email };
 }
@@ -267,7 +281,7 @@ describe("password login and server-checked sessions", () => {
         .statusCode
     ).toBe(401);
   });
-  it("rejects absolute/idle expiry and disabled users for both access and refresh", async () => {
+  it("rejects legacy sessions at their expiry boundaries and disabled users even when opting in", async () => {
     for (const reason of ["absolute", "idle", "disabled"]) {
       const { tokens } = await register();
       const claims = decodeJwt(tokens.accessToken);
@@ -277,29 +291,43 @@ describe("password login and server-checked sessions", () => {
           data: { disabledAt: now }
         });
       else {
-        const old = new Date(now.getTime() - 31 * 86400000);
+        const absoluteStart = new Date(
+          now.getTime() - config.sessionSeconds * 1000
+        );
+        const idleStart = new Date(now.getTime() - config.idleSeconds * 1000);
         await db.session.update({
           where: { id: claims.sid as string },
           data: {
-            createdAt: old,
             ...(reason === "absolute"
-              ? { expiresAt: new Date(now.getTime() - 1000) }
-              : { lastUsedAt: old })
+              ? { createdAt: absoluteStart, expiresAt: now }
+              : { createdAt: idleStart, lastUsedAt: idleStart })
           }
         });
       }
       expect((await me(tokens.accessToken)).statusCode).toBe(401);
       expect(
-        (await post("refresh", { refreshToken: tokens.refreshToken }))
-          .statusCode
+        (
+          await post(
+            "refresh",
+            { refreshToken: tokens.refreshToken },
+            undefined,
+            persistentHeaders
+          )
+        ).statusCode
       ).toBe(401);
     }
   });
   it("logs out current or all sessions without affecting another user", async () => {
-    const first = await register();
+    const first = await register(undefined, persistentHeaders);
     const second = (
-      await post("login", { email: first.email, password })
+      await post(
+        "login",
+        { email: first.email, password },
+        undefined,
+        persistentHeaders
+      )
     ).json<Tokens>();
+    expect(second.sessionExpiresAt).toBeNull();
     const other = await register();
     expect(
       (await post("logout", {}, first.tokens.accessToken)).statusCode
@@ -311,13 +339,30 @@ describe("password login and server-checked sessions", () => {
     ).toBe(401);
     expect((await me(second.accessToken)).statusCode).toBe(200);
     const third = (
-      await post("login", { email: first.email, password })
+      await post(
+        "login",
+        { email: first.email, password },
+        undefined,
+        persistentHeaders
+      )
     ).json<Tokens>();
     expect(
       (await post("logout", { allSessions: true }, second.accessToken))
         .statusCode
     ).toBe(200);
-    expect((await me(third.accessToken)).statusCode).toBe(401);
+    for (const revoked of [second, third]) {
+      expect((await me(revoked.accessToken)).statusCode).toBe(401);
+      expect(
+        (
+          await post(
+            "refresh",
+            { refreshToken: revoked.refreshToken },
+            undefined,
+            persistentHeaders
+          )
+        ).statusCode
+      ).toBe(401);
+    }
     expect((await me(other.tokens.accessToken)).statusCode).toBe(200);
   });
 });
@@ -327,9 +372,10 @@ describe("Google onboarding, challenges and explicit linking", () => {
     const subject = `synthetic-${randomUUID()}`;
     const email = uniqueEmail();
     const proof = await signedProof(await challenge(), subject, email);
-    const response = await post("google", proof);
+    const response = await post("google", proof, undefined, persistentHeaders);
     expect(response.statusCode, response.body).toBe(200);
     const tokens = response.json<Tokens>();
+    expect(tokens.sessionExpiresAt).toBeNull();
     const user = await db.user.findUniqueOrThrow({ where: { email } });
     expect(user.passwordHash).toBeNull();
     expect(user.emailVerifiedAt).not.toBeNull();
@@ -574,6 +620,91 @@ describe("Google onboarding, challenges and explicit linking", () => {
 });
 
 describe("session persistence and cleanup", () => {
+  it("refreshes a persistent session at both former deadlines while access tokens still expire", async () => {
+    const startedAt = now;
+    const { tokens } = await register(undefined, persistentHeaders);
+    const sessionId = decodeJwt(tokens.accessToken).sid as string;
+    expect(tokens.sessionExpiresAt).toBeNull();
+    expect(Date.parse(tokens.accessExpiresAt) - startedAt.getTime()).toBe(
+      config.accessSeconds * 1000
+    );
+
+    try {
+      now = new Date(tokens.accessExpiresAt);
+      expect((await me(tokens.accessToken)).statusCode).toBe(401);
+
+      let current = tokens;
+      for (const elapsed of [config.idleSeconds, config.sessionSeconds]) {
+        now = new Date(startedAt.getTime() + elapsed * 1000);
+        await auth.cleanup();
+        const rotated = await post(
+          "refresh",
+          { refreshToken: current.refreshToken },
+          undefined,
+          persistentHeaders
+        );
+        expect(rotated.statusCode).toBe(200);
+        const replacement = rotated.json<Tokens>();
+        expect(replacement.sessionExpiresAt).toBeNull();
+        expect(replacement.refreshToken).not.toBe(current.refreshToken);
+        expect((await me(replacement.accessToken)).statusCode).toBe(200);
+        current = replacement;
+      }
+      expect(await db.refreshToken.count({ where: { sessionId } })).toBe(3);
+
+      await db.session.update({
+        where: { id: sessionId },
+        data: { revokedAt: now }
+      });
+      expect((await me(current.accessToken)).statusCode).toBe(401);
+      expect(
+        (
+          await post(
+            "refresh",
+            { refreshToken: current.refreshToken },
+            undefined,
+            persistentHeaders
+          )
+        ).statusCode
+      ).toBe(401);
+    } finally {
+      now = startedAt;
+    }
+  });
+
+  it("upgrades a valid legacy family once and retains its consumed hashes for replay detection", async () => {
+    const { tokens } = await register();
+    expect(tokens.sessionExpiresAt).not.toBeNull();
+    const ordinary = await post("refresh", {
+      refreshToken: tokens.refreshToken
+    });
+    expect(ordinary.statusCode).toBe(200);
+    const legacy = ordinary.json<Tokens>();
+    expect(legacy.sessionExpiresAt).toBe(tokens.sessionExpiresAt);
+
+    const upgrade = await post(
+      "refresh",
+      { refreshToken: legacy.refreshToken },
+      undefined,
+      persistentHeaders
+    );
+    expect(upgrade.statusCode).toBe(200);
+    const persistent = upgrade.json<Tokens>();
+    expect(persistent.sessionExpiresAt).toBeNull();
+    expect((await me(persistent.accessToken)).statusCode).toBe(200);
+    expect(
+      (
+        await post(
+          "refresh",
+          { refreshToken: legacy.refreshToken },
+          undefined,
+          persistentHeaders
+        )
+      ).statusCode
+    ).toBe(401);
+    expect((await me(persistent.accessToken)).statusCode).toBe(401);
+  });
+
   it("restores against a new service instance using only the persisted refresh credential", async () => {
     const { tokens } = await register();
     const restored = await createAuthService(

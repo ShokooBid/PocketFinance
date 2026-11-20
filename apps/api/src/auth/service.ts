@@ -14,6 +14,7 @@ import type { GoogleVerifier } from "./google.js";
 
 type Transaction = Prisma.TransactionClient;
 export type Principal = { userId: string; sessionId: string };
+export type SessionPolicy = "bounded" | "persistent";
 type Purpose = "login" | "link" | "reauthenticate";
 type GoogleInput = { challengeId: string; nonce: string; idToken: string };
 const addSeconds = (now: Date, seconds: number) =>
@@ -32,13 +33,21 @@ export async function createAuthService(
 ) {
   const verifyPassword = await passwordVerifier();
 
+  function sessionDeadline(session: Session) {
+    if (!session.expiresAt) return null;
+    const idleDeadline = addSeconds(
+      session.lastUsedAt ?? session.createdAt,
+      config.idleSeconds
+    );
+    return idleDeadline < session.expiresAt ? idleDeadline : session.expiresAt;
+  }
+
   function active(session: Session & { user: User }, now: Date) {
+    const deadline = sessionDeadline(session);
     return (
       !session.revokedAt &&
       !session.user.disabledAt &&
-      session.expiresAt > now &&
-      addSeconds(session.lastUsedAt ?? session.createdAt, config.idleSeconds) >
-        now
+      (!deadline || deadline > now)
     );
   }
 
@@ -57,16 +66,10 @@ export async function createAuthService(
     refreshToken: string,
     now: Date
   ) {
-    const expiresAt = new Date(
-      Math.min(
-        addSeconds(now, config.accessSeconds).getTime(),
-        session.expiresAt.getTime(),
-        addSeconds(
-          session.lastUsedAt ?? session.createdAt,
-          config.idleSeconds
-        ).getTime()
-      )
-    );
+    const accessDeadline = addSeconds(now, config.accessSeconds);
+    const deadline = sessionDeadline(session);
+    const expiresAt =
+      deadline && deadline < accessDeadline ? deadline : accessDeadline;
     return {
       accessToken: await accessToken(
         config,
@@ -77,12 +80,17 @@ export async function createAuthService(
       ),
       refreshToken,
       accessExpiresAt: expiresAt.toISOString(),
-      sessionExpiresAt: session.expiresAt.toISOString(),
+      sessionExpiresAt: session.expiresAt?.toISOString() ?? null,
       tokenType: "Bearer" as const
     };
   }
 
-  async function issue(tx: Transaction, userId: string, now: Date) {
+  async function issue(
+    tx: Transaction,
+    userId: string,
+    now: Date,
+    policy: SessionPolicy
+  ) {
     // Lock the user: session creation/disable checks and logout-all serialize here.
     await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId}::uuid FOR UPDATE`;
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
@@ -93,7 +101,10 @@ export async function createAuthService(
         createdAt: now,
         lastUsedAt: now,
         reauthenticatedAt: now,
-        expiresAt: addSeconds(now, config.sessionSeconds)
+        expiresAt:
+          policy === "persistent"
+            ? null
+            : addSeconds(now, config.sessionSeconds)
       }
     });
     const refresh = randomToken();
@@ -187,7 +198,11 @@ export async function createAuthService(
     return google(input.idToken, input.nonce, clock());
   }
 
-  async function register(email: string, password: string) {
+  async function register(
+    email: string,
+    password: string,
+    policy: SessionPolicy = "bounded"
+  ) {
     const hash = await hashPassword(password);
     if (await findEmail(email)) throw invalidCredentials();
     try {
@@ -195,7 +210,7 @@ export async function createAuthService(
         const user = await tx.user.create({
           data: { email: email.trim().toLowerCase(), passwordHash: hash }
         });
-        return issue(tx, user.id, clock());
+        return issue(tx, user.id, clock(), policy);
       });
     } catch (error) {
       if (uniqueFailure(error)) throw invalidCredentials();
@@ -203,17 +218,24 @@ export async function createAuthService(
     }
   }
 
-  async function login(email: string, password: string) {
+  async function login(
+    email: string,
+    password: string,
+    policy: SessionPolicy = "bounded"
+  ) {
     const user = await findEmail(email);
     const valid = await verifyPassword(
       user?.disabledAt ? null : user?.passwordHash,
       password
     );
     if (!valid || !user || user.disabledAt) throw invalidCredentials();
-    return db.$transaction((tx) => issue(tx, user.id, clock()));
+    return db.$transaction((tx) => issue(tx, user.id, clock(), policy));
   }
 
-  async function googleLogin(input: GoogleInput) {
+  async function googleLogin(
+    input: GoogleInput,
+    policy: SessionPolicy = "bounded"
+  ) {
     const proof = await googleProof(input, "login");
     const identity = await db.authIdentity.findUnique({
       where: {
@@ -224,7 +246,9 @@ export async function createAuthService(
       }
     });
     if (identity)
-      return db.$transaction((tx) => issue(tx, identity.userId, clock()));
+      return db.$transaction((tx) =>
+        issue(tx, identity.userId, clock(), policy)
+      );
     if (!proof.email || !proof.verifiedEmail || (await findEmail(proof.email)))
       throw invalidCredentials();
     try {
@@ -238,7 +262,7 @@ export async function createAuthService(
             }
           }
         });
-        return issue(tx, user.id, clock());
+        return issue(tx, user.id, clock(), policy);
       });
     } catch (error) {
       if (uniqueFailure(error)) throw invalidCredentials();
@@ -302,7 +326,7 @@ export async function createAuthService(
     });
   }
 
-  async function refresh(raw: string) {
+  async function refresh(raw: string, policy: SessionPolicy = "bounded") {
     const result = await db.$transaction(async (tx) => {
       const token = await tx.refreshToken.findUnique({
         where: { tokenHash: tokenHash(raw) }
@@ -311,13 +335,18 @@ export async function createAuthService(
       // Every rotation/revocation takes this row lock. READ COMMITTED then sees
       // the previous winner's commit, including its consumed token marker.
       await tx.$queryRaw`SELECT id FROM "Session" WHERE id = ${token.sessionId}::uuid FOR UPDATE`;
-      const session = await tx.session.findUniqueOrThrow({
+      const session = await tx.session.findUnique({
         where: { id: token.sessionId },
         include: { user: true }
       });
+      if (!session || session.revokedAt) return null;
       const now = clock();
       const consumed = await tx.refreshToken.updateMany({
-        where: { id: token.id, consumedAt: null, expiresAt: { gt: now } },
+        where: {
+          id: token.id,
+          consumedAt: null,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }]
+        },
         data: { consumedAt: now }
       });
       if (!active(session, now) || consumed.count !== 1) {
@@ -327,18 +356,22 @@ export async function createAuthService(
         });
         return null; // Return, don't throw: revocation must commit.
       }
+      // Upgrade only after validating the previous policy and consuming its token.
+      const updated = await tx.session.update({
+        where: { id: session.id },
+        data: {
+          lastUsedAt: now,
+          ...(policy === "persistent" ? { expiresAt: null } : {})
+        }
+      });
       const replacement = randomToken();
       await tx.refreshToken.create({
         data: {
           sessionId: session.id,
           tokenHash: tokenHash(replacement),
           createdAt: now,
-          expiresAt: session.expiresAt
+          expiresAt: updated.expiresAt
         }
-      });
-      const updated = await tx.session.update({
-        where: { id: session.id },
-        data: { lastUsedAt: now }
       });
       return credentials(session.userId, updated, replacement, now);
     });
@@ -384,7 +417,11 @@ export async function createAuthService(
       // their family is usable. Limit each batch to keep maintenance bounded.
       const expired = await tx.$queryRaw<
         { id: string }[]
-      >`SELECT id FROM "Session" WHERE "expiresAt" <= ${now} OR "revokedAt" IS NOT NULL OR COALESCE("lastUsedAt", "createdAt") <= ${addSeconds(now, -config.idleSeconds)} ORDER BY id LIMIT 500 FOR UPDATE SKIP LOCKED`;
+      >`SELECT id FROM "Session"
+        WHERE "revokedAt" IS NOT NULL OR ("expiresAt" IS NOT NULL AND (
+          "expiresAt" <= ${now} OR COALESCE("lastUsedAt", "createdAt") <= ${addSeconds(now, -config.idleSeconds)}
+        ))
+        ORDER BY id LIMIT 500 FOR UPDATE SKIP LOCKED`;
       const ids = expired.map((session) => session.id);
       await tx.authChallenge.deleteMany({
         where: { OR: [{ expiresAt: { lte: now } }, { sessionId: { in: ids } }] }

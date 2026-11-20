@@ -159,32 +159,53 @@ describe("verified mobile sessions", () => {
     });
     expect(h.store.clear).not.toHaveBeenCalled();
   });
-  it("returns to sign-in for missing and expired absolute credentials", async () => {
-    for (const value of [
-      null,
-      {
-        ...stored(),
-        credentials: {
-          ...stored().credentials,
-          sessionExpiresAt: new Date(now - 1).toISOString()
-        }
-      }
-    ]) {
-      const h = harness(value);
+  it("returns to sign-in locally when no credentials are stored", async () => {
+    const h = harness(null);
+    await h.controller.restore();
+    expect(h.controller.getSnapshot().status).toBe("signed-out");
+    expect(h.fetcher).not.toHaveBeenCalled();
+  });
+  it("clears stored credentials when the server rejects a restore", async () => {
+    const h = harness(stored("old", true));
+    h.fetcher.mockResolvedValueOnce(response({}, 401));
+    await h.controller.restore();
+    expect(h.controller.getSnapshot().status).toBe("signed-out");
+    expect(h.disk()).toBeNull();
+    expect(h.fetcher.mock.calls[0]?.[0]).toMatch(/\/auth\/refresh$/);
+  });
+  it("restores persistent credentials after the former idle and absolute deadlines", async () => {
+    for (const days of [7, 30]) {
+      const reopenedAt = now + days * 86_400_000;
+      const replacement = {
+        ...stored("renewed").credentials,
+        accessExpiresAt: new Date(reopenedAt + 900_000).toISOString()
+      };
+      const h = harness(stored(), () => reopenedAt);
+      h.fetcher.mockResolvedValueOnce(
+        response({ ...replacement, sessionExpiresAt: null })
+      );
+
       await h.controller.restore();
-      expect(h.controller.getSnapshot().status).toBe("signed-out");
-      expect(h.fetcher).not.toHaveBeenCalled();
+
+      expect(h.controller.getSnapshot().status).toBe("authenticated");
+      expect(h.disk()?.credentials).toEqual(replacement);
+      expect(h.fetcher.mock.calls[0]?.[1].headers).toMatchObject({
+        "X-PocketFinance-Session-Policy": "persistent"
+      });
     }
   });
   it("refreshes expired access and securely persists the replacement before navigation", async () => {
     const h = harness(stored("old", true));
-    h.fetcher.mockResolvedValueOnce(response(stored("new").credentials));
+    const replacement = stored("new").credentials;
+    h.fetcher.mockResolvedValueOnce(
+      response({ ...replacement, sessionExpiresAt: "2026-10-27T12:00:00Z" })
+    );
     await h.controller.restore();
     expect(h.fetcher).toHaveBeenCalledTimes(2);
     expect(
       h.store.write.mock.calls.map(([value]) => value.refreshPending)
     ).toEqual([true, false]);
-    expect(h.disk()?.credentials.accessToken).toBe("new");
+    expect(h.disk()?.credentials).toEqual(replacement);
     expect(h.controller.getSnapshot().status).toBe("authenticated");
   });
   it("shares one refresh for simultaneous and late 401s and retries each request once", async () => {

@@ -28,8 +28,7 @@ export function stored(
       accessToken,
       refreshToken: "r".repeat(43),
       tokenType: "Bearer",
-      accessExpiresAt: new Date(now + (expired ? -1000 : 600000)).toISOString(),
-      sessionExpiresAt: new Date(now + 86400000).toISOString()
+      accessExpiresAt: new Date(now + (expired ? -1000 : 600000)).toISOString()
     }
   };
 }
@@ -49,7 +48,10 @@ export function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-export function harness(initial: StoredSession | null = stored()) {
+export function harness(
+  initial: StoredSession | null = stored(),
+  clock = () => now
+) {
   let disk = initial;
   const store = {
     read: jest
@@ -69,12 +71,7 @@ export function harness(initial: StoredSession | null = stored()) {
     .fn<(nonce: string) => Promise<string | null>>()
     .mockResolvedValue("synthetic-provider-proof");
   const transport = createTransport("https://api.example.invalid", fetcher);
-  const controller = createSessionController(
-    store,
-    transport,
-    proof,
-    () => now
-  );
+  const controller = createSessionController(store, transport, proof, clock);
   const client = () => {
     const state = controller.getSnapshot();
     if (state.status !== "authenticated")

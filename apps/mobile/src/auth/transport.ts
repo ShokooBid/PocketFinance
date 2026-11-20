@@ -57,7 +57,8 @@ export interface Transport {
     path: string,
     schema: z.ZodType<T>,
     body?: unknown,
-    accessToken?: string
+    accessToken?: string,
+    sessionPolicy?: "persistent"
   ): Promise<T>;
 }
 // Only this subset of fetch is used. Keep native/DOM/Node overloads out of the
@@ -93,7 +94,7 @@ export function createTransport(
     /* Missing configuration leaves the demo available. */
   }
   return {
-    async send(method, path, schema, body, accessToken) {
+    async send(method, path, schema, body, accessToken, sessionPolicy) {
       if (
         !origin ||
         !(
@@ -127,7 +128,10 @@ export function createTransport(
             ...(body === undefined
               ? {}
               : { "Content-Type": "application/json" }),
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+            ...(sessionPolicy
+              ? { "X-PocketFinance-Session-Policy": sessionPolicy }
+              : {})
           },
           ...(body === undefined ? {} : { body: JSON.stringify(body) })
         });
