@@ -18,10 +18,7 @@ type MenuActions = {
 };
 const Context = createContext<MenuActions | null>(null);
 
-export function UserMenuProvider({
-  children,
-  onBeforeSignOut
-}: PropsWithChildren<{ onBeforeSignOut?: (action: () => void) => void }>) {
+export function UserMenuProvider({ children }: PropsWithChildren) {
   const { session, controller, exitDemo } = useSession();
   const demo = session.status === "demo";
   return (
@@ -30,12 +27,8 @@ export function UserMenuProvider({
         demo || session.status === "authenticated"
           ? {
               signOut: () => {
-                const action = () => {
-                  if (demo) exitDemo();
-                  else void controller.logout();
-                };
-                if (onBeforeSignOut) onBeforeSignOut(action);
-                else action();
+                if (demo) exitDemo();
+                else void controller.logout();
               },
               signOutLabel: demo
                 ? "Exit demo and return to sign in"
@@ -70,7 +63,7 @@ export function UserMenu() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="User menu"
-        accessibilityHint="Settings and sign out."
+        accessibilityHint="Accounts and sign out."
         accessibilityState={{ expanded: open }}
         onPress={() => {
           if (focused.current) {
@@ -100,11 +93,11 @@ export function UserMenu() {
           <Link href="/settings" asChild>
             <Pressable
               accessibilityRole="link"
-              accessibilityLabel="Open settings"
+              accessibilityLabel="Accounts"
               onPress={() => setOpen(false)}
               style={styles.item}
             >
-              <Text style={styles.itemText}>Settings</Text>
+              <Text style={styles.itemText}>Accounts</Text>
             </Pressable>
           </Link>
           <Pressable

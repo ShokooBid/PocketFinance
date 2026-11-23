@@ -19,6 +19,7 @@ import {
 } from "./date-picker-data";
 import { theme } from "./theme";
 import { Button } from "./ui";
+import { HelpTooltip } from "./help-tooltip";
 
 type PickerProps = ComponentProps<typeof DateTimePicker>;
 type PickerSelection = Parameters<NonNullable<PickerProps["onChange"]>>[0];
@@ -138,11 +139,17 @@ export function SingleDateField({
   value,
   onChange,
   disabled = false,
+  label = "Date",
+  accessibilityLabel = "Choose transaction date",
+  help,
   renderTrigger
 }: {
   value: string;
   onChange: (date: string) => void;
   disabled?: boolean;
+  label?: string;
+  accessibilityLabel?: string;
+  help?: string;
   renderTrigger?: (toggle: () => void, expanded: boolean) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -154,17 +161,22 @@ export function SingleDateField({
       {renderTrigger ? (
         renderTrigger(toggle, open)
       ) : (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Choose transaction date"
-          accessibilityHint={value}
-          accessibilityState={{ disabled, expanded: open }}
-          disabled={disabled}
-          onPress={toggle}
-          style={styles.trigger}
-        >
-          <Text style={styles.label}>Date: {value}</Text>
-        </Pressable>
+        <View style={help && styles.triggerRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={accessibilityLabel}
+            accessibilityHint={value}
+            accessibilityState={{ disabled, expanded: open }}
+            disabled={disabled}
+            onPress={toggle}
+            style={[styles.trigger, help && styles.triggerWithHelp]}
+          >
+            <Text style={styles.label}>
+              {label}: {value}
+            </Text>
+          </Pressable>
+          {help && <HelpTooltip label={`${label} help`} description={help} />}
+        </View>
       )}
       {open && (
         <DatePicker
@@ -333,5 +345,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.color.primarySoft,
     justifyContent: "center"
   },
+  triggerRow: { flexDirection: "row", alignItems: "center", gap: 8, zIndex: 2 },
+  triggerWithHelp: { flex: 1 },
   label: { color: theme.color.text, fontSize: 16 }
 });

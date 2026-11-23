@@ -26,10 +26,9 @@ export function FinanceSetup({ children }: PropsWithChildren) {
     return () => subscription.remove();
   }, [reload]);
 
-  const settingsOrPrivacy = pathname === "/settings" || pathname === "/privacy";
   const ready = currencyState.status === "ready" && !currencyState.saving;
   const blocked =
-    !settingsOrPrivacy &&
+    pathname !== "/settings" &&
     (!ready || selectedCurrency === null || !hasActiveAccounts);
   useEffect(() => {
     if (blocked) Keyboard.dismiss();
@@ -77,6 +76,7 @@ export function FinanceSetup({ children }: PropsWithChildren) {
           )}
           {selectedCurrency !== null && !hasActiveAccounts && (
             <AccountManagement
+              createInline
               source={accounts}
               currency={selectedCurrency}
               defaultAccountId={preferences.defaultAccountId}

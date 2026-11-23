@@ -2,26 +2,26 @@ import { AccountManagement } from "../../account-management";
 import { useAccounts, useFinanceChanges } from "../../transaction-context";
 import { useCallback, useState } from "react";
 import { useSession } from "../../session";
-import { Button, Screen } from "../../ui";
-import Constants from "expo-constants";
+import { Body, Button, Screen, StateNotice } from "../../ui";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { usePreferences } from "../../preferences";
-import { Settings } from "../../settings";
-import { useEntry } from "../../entry-context";
 
 export { ErrorBoundary } from "../../error-boundary";
 
-export default function SettingsScreen() {
-  const { session, controller } = useSession();
-  const entry = useEntry();
-  const [shouldFail, setShouldFail] = useState(false);
-  const preferences = usePreferences();
+export default function AccountsScreen() {
+  const { session } = useSession();
+  const {
+    selectedCurrency,
+    defaultAccountId,
+    setDefaultAccount,
+    currencyState
+  } = usePreferences();
   const accounts = useAccounts();
   const changes = useFinanceChanges();
   const [active, setActive] = useState(false);
   const { returnTo } = useLocalSearchParams();
   const returningToDraft = returnTo === "transaction-draft";
-  const { reload } = preferences.currencyState;
+  const { reload, status, saving, error } = currencyState;
   useFocusEffect(
     useCallback(() => {
       setActive(true);
@@ -29,11 +29,9 @@ export default function SettingsScreen() {
     }, [])
   );
   const router = useRouter();
-  if (shouldFail) throw new Error("Synthetic rendering failure.");
   return (
     <Screen
-      title="Settings"
-      back
+      title="Accounts"
       {...(returningToDraft
         ? {
             backAction: {
@@ -44,20 +42,22 @@ export default function SettingsScreen() {
           }
         : {})}
     >
-      <Settings
-        user={session.status === "authenticated" ? session.user : null}
-        controller={controller}
-        {...preferences}
-        defaultCurrency={preferences.selectedCurrency}
-        version={Constants.expoConfig?.version ?? "Development"}
-        onPrivacy={() => router.push("/privacy")}
-        onBeforeSignOut={entry.requestDiscard}
-      />
-      <Button
-        label="Manage categories"
-        onPress={() => router.push("/categories")}
-      />
-      {preferences.selectedCurrency !== null && (
+      {(status === "loading" || saving) && (
+        <StateNotice
+          kind="loading"
+          title="Checking account preferences"
+          message="Confirming your currency and default account."
+        />
+      )}
+      {error && (
+        <StateNotice
+          kind="error"
+          title="Account preferences need attention"
+          message={error}
+          onRetry={() => void reload()}
+        />
+      )}
+      {selectedCurrency !== null ? (
         <AccountManagement
           source={accounts}
           changes={changes}
@@ -70,23 +70,26 @@ export default function SettingsScreen() {
                   })
               }
             : {})}
-          currency={preferences.defaultCurrency}
-          defaultAccountId={preferences.defaultAccountId}
-          onDefault={preferences.setDefaultAccount}
+          currency={selectedCurrency}
+          defaultAccountId={defaultAccountId}
+          onDefault={setDefaultAccount}
           onReloadPreferences={reload}
           active={active}
-          preferencesReady={
-            preferences.currencyState.status === "ready" &&
-            !preferences.currencyState.saving
-          }
+          preferencesReady={status === "ready" && !saving}
         />
-      )}
-      {session.status === "demo" && (
-        <Button
-          label="Preview rendering error recovery"
-          hint="Shows a safe error screen. Try again will reopen Settings."
-          onPress={() => setShouldFail(true)}
-        />
+      ) : (
+        status === "ready" &&
+        !saving && (
+          <>
+            <Body>
+              Choose your permanent currency before adding an account.
+            </Body>
+            <Button
+              label="Continue setup"
+              onPress={() => router.replace("/")}
+            />
+          </>
+        )
       )}
     </Screen>
   );

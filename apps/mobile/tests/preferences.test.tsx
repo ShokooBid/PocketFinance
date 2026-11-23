@@ -14,7 +14,7 @@ import {
   PreferencesReady,
   usePreferences
 } from "../src/preferences";
-import { CurrencySettings, CurrencySelection } from "../src/currency-settings";
+import { CurrencySelection } from "../src/currency-settings";
 import { CategoriesProvider } from "../src/category-context";
 import { TransactionsProvider, useAccounts } from "../src/transaction-context";
 import { Body, Button } from "../src/ui";
@@ -58,10 +58,7 @@ function Probe() {
   preferences = p;
   return (
     <>
-      <CurrencySettings
-        defaultCurrency={p.selectedCurrency}
-        state={p.currencyState}
-      />
+      <Body>Default currency: {p.selectedCurrency ?? "Not chosen"}</Body>
       <Body>Active accounts: {String(p.hasActiveAccounts)}</Body>
       {p.currencyState.initialized && p.selectedCurrency === null && (
         <CurrencySelection

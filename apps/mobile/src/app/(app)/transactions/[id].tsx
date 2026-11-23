@@ -39,7 +39,7 @@ function TransactionDetailScreen() {
       return () => setActive(false);
     }, [currencyState.reload])
   );
-  const openDraftSettings = () =>
+  const openDraftAccounts = () =>
     router.push({
       pathname: "/settings",
       params: { returnTo: "transaction-draft" }
@@ -63,7 +63,7 @@ function TransactionDetailScreen() {
           defaultAccountId={defaultAccountId}
           accounts={accounts}
           active={active}
-          onCurrencySettings={openDraftSettings}
+          onCurrencySettings={openDraftAccounts}
           preferencesReady={
             currencyState.status === "ready" &&
             !currencyState.saving &&

@@ -5,6 +5,8 @@ import { createAuthService } from "../../src/auth/service.js";
 import { createAccountService } from "../../src/accounts/service.js";
 import { createPreferencesService } from "../../src/preferences/service.js";
 import { createDashboardService } from "../../src/dashboard/service.js";
+import { createTransactionService } from "../../src/transactions/service.js";
+import { createTransferService } from "../../src/transfers/service.js";
 import { testConfig } from "../fixtures.js";
 import { disposableDatabase } from "../support/disposable.js";
 
@@ -168,7 +170,7 @@ describe("owned named accounts and defaults", () => {
     for (const patch of [
       {},
       { currency: "USD" },
-      { openingDate: "2026-01-02" },
+      { openingDate: "2026-02-29" },
       { openingBalanceMinor: 0 },
       { archivedAt: null }
     ])
@@ -395,7 +397,77 @@ describe("owned named accounts and defaults", () => {
     });
   });
 
-  it("enforces immutable baselines, owned eligible defaults, uniqueness and archive cleanup in direct DB writes too", async () => {
+  it("updates opening dates through the earliest posting and rejects changes past either transfer leg", async () => {
+    const user = await owner();
+    const from = await create(user, { openingBalanceMinor: 10000 });
+    const to = await create(user, { name: "Savings" });
+    const url = `${base}/${from.id}`;
+    const emptyAccount = await request(user, "PATCH", url, {
+      openingDate: "2026-01-02"
+    });
+    expect(emptyAccount.statusCode, emptyAccount.body).toBe(200);
+    const category = await db.category.findFirstOrThrow({
+      where: { userId: null, parentId: { not: null } }
+    });
+    await createTransactionService(db).create(user.id, {
+      accountId: from.id,
+      categoryId: category.id,
+      amountMinor: 1000,
+      direction: "expense",
+      date: "2026-01-05",
+      clientRequestId: randomUUID(),
+      note: null
+    });
+    const pastNormalPosting = await request(user, "PATCH", url, {
+      openingDate: "2026-01-06"
+    });
+    expect(pastNormalPosting.statusCode, pastNormalPosting.body).toBe(409);
+    expect(pastNormalPosting.json().error.code).toBe(
+      "OPENING_DATE_AFTER_ACTIVITY"
+    );
+    await createTransferService(db).create(user.id, {
+      fromAccountId: from.id,
+      toAccountId: to.id,
+      amountMinor: 2000,
+      date: "2026-01-03",
+      clientRequestId: randomUUID(),
+      note: null
+    });
+    for (const account of [from, to]) {
+      const result = await request(user, "PATCH", `${base}/${account.id}`, {
+        openingDate: "2026-01-04",
+        name: "Rejected rename"
+      });
+      expect(result.statusCode, result.body).toBe(409);
+      expect(result.json().error.code).toBe("OPENING_DATE_AFTER_ACTIVITY");
+      await expect(
+        db.account.update({
+          where: { id: account.id },
+          data: { openingDate: new Date("2026-01-04T00:00:00Z") }
+        })
+      ).rejects.toThrow();
+    }
+    const onFirstPosting = await request(user, "PATCH", url, {
+      openingDate: "2026-01-03"
+    });
+    expect(onFirstPosting.statusCode, onFirstPosting.body).toBe(200);
+    expect(onFirstPosting.json()).toMatchObject({
+      openingDate: "2026-01-03",
+      openingBalanceMinor: 10000,
+      name: from.name
+    });
+    const earlier = await request(user, "PATCH", url, {
+      openingDate: "2025-12-31"
+    });
+    expect(earlier.statusCode, earlier.body).toBe(200);
+    expect(await accounts.get(user.id, from.id, "2026-01-05")).toMatchObject({
+      openingDate: "2025-12-31",
+      openingBalanceMinor: 10000,
+      balanceMinor: 7000
+    });
+  });
+
+  it("enforces immutable opening balances, owned eligible defaults, uniqueness and archive cleanup in direct DB writes too", async () => {
     const user = await owner(),
       other = await owner();
     const account = await create(user);
@@ -403,7 +475,6 @@ describe("owned named accounts and defaults", () => {
     for (const data of [
       { currency: "USD" },
       { openingBalanceMinor: 1 },
-      { openingDate: new Date("2026-02-01T00:00:00Z") },
       { userId: other.id }
     ])
       await expect(
@@ -456,6 +527,12 @@ describe("owned named accounts and defaults", () => {
       db.account.update({
         where: { id: account.id },
         data: { archivedAt: null }
+      })
+    ).rejects.toThrow();
+    await expect(
+      db.account.update({
+        where: { id: account.id },
+        data: { openingDate: new Date("2025-12-31T00:00:00Z") }
       })
     ).rejects.toThrow();
   });

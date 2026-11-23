@@ -183,7 +183,7 @@ export function TransactionEntry() {
     targets[first].current?.focus();
     AccessibilityInfo.announceForAccessibility(entry.errors[first]!);
   }, [entry.errors]);
-  const settings = () => {
+  const openAccounts = () => {
     Keyboard.dismiss();
     setPicker(null);
     router.push({
@@ -549,7 +549,10 @@ export function TransactionEntry() {
                 ? `Transfers need two active accounts in ${entry.draft.currency}.`
                 : `Transactions need an active account in ${entry.draft.currency}.`}
             </Body>
-            <Button label="Add an account in Settings" onPress={settings} />
+            <Button
+              label="Open Accounts to add an account"
+              onPress={openAccounts}
+            />
           </>
         )}
         {(entry.editingTransfer || entry.editingTransaction) && (

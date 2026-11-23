@@ -18,6 +18,8 @@ import { accounts, accountId, deferred, response } from "./auth-fixtures";
 import { createDemoCategorySource } from "../src/category-data";
 import { ClientFailure } from "../src/auth/transport";
 import { AppState } from "react-native";
+import { localDate } from "../src/entry-data";
+import { chooseAccountOpeningDate } from "./date-picker-fixtures";
 
 async function press(name: string) {
   await act(async () => {
@@ -72,8 +74,24 @@ it("creates a named account, selects its default and confirms archival while pre
     />
   );
   await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Create account" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Add Account" })).toBeEnabled()
   );
+  expect(screen.queryByLabelText("Account name")).toBeNull();
+  await press("Add Account");
+  fireEvent.changeText(screen.getByLabelText("Account name"), "Cancel this");
+  await chooseAccountOpeningDate("2024-03-10");
+  await press("Cancel");
+  expect(create).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText("Account name")).toBeNull();
+  await press("Add Account");
+  expect(screen.getByLabelText("Account name")).toHaveProp("value", "");
+  expect(
+    screen.getByRole("button", { name: "Choose account opening date" })
+  ).toHaveProp("accessibilityHint", localDate());
+  expect(screen.queryByText(/To record older cash transactions/)).toBeNull();
+  await press("Opening date help");
+  expect(screen.getByText(/To record older cash transactions/)).toBeVisible();
+  fireEvent(screen.getByRole("button", { name: "Opening date help" }), "blur");
   expect(screen.queryByText("Financial accounts")).toBeNull();
   expect(screen.queryByText("No financial accounts yet")).toBeNull();
   expect(screen.queryByRole("button", { name: "Reload accounts" })).toBeNull();
@@ -104,23 +122,21 @@ it("creates a named account, selects its default and confirms archival while pre
       screen.getByLabelText("Opening balance (optional)"),
       "-12.34"
     );
-    fireEvent.changeText(
-      screen.getByLabelText("Account opening date (YYYY-MM-DD)"),
-      "2026-01-01"
-    );
   });
+  await chooseAccountOpeningDate("2024-02-29");
   await press("Create account");
   expect(create).toHaveBeenCalledWith({
     name: "My cash",
     type: "credit",
     currency: "CAD",
     openingBalanceMinor: -1234,
-    openingDate: "2026-01-01"
+    openingDate: "2024-02-29"
   });
-  expect(screen.queryByText(`Account details: ${row.name}`)).toBeNull();
+  expect(screen.queryByLabelText("Account name")).toBeNull();
+  expect(screen.queryByText(`Opening date: ${row.openingDate}`)).toBeNull();
   for (const [label, tooltip] of [
     [`View balance for ${row.name}`, "View balance"],
-    [`Rename ${row.name}`, `Rename ${row.name}`],
+    [`Edit ${row.name}`, `Edit ${row.name}`],
     [`Use ${row.name} as default`, `Use ${row.name} as default`],
     [`Archive ${row.name}`, `Archive ${row.name}`]
   ] as const) {
@@ -133,7 +149,7 @@ it("creates a named account, selects its default and confirms archival while pre
   expect(get).not.toHaveBeenCalled();
   expect(onDefault).not.toHaveBeenCalled();
   expect(archive).not.toHaveBeenCalled();
-  expect(screen.queryByRole("header", { name: "Rename account" })).toBeNull();
+  expect(screen.queryByRole("header", { name: "Edit account" })).toBeNull();
   const eye = screen.getByRole("button", {
     name: `View balance for ${row.name}`
   });
@@ -145,7 +161,7 @@ it("creates a named account, selects its default and confirms archival while pre
   expect(onDefault).toHaveBeenCalledWith(row.id);
   await press("Archive Test CAD");
   expect(archive).not.toHaveBeenCalled();
-  await press("Confirm archive account");
+  await press("Archive");
   expect(archive).toHaveBeenCalledWith(row.id);
 });
 
@@ -165,12 +181,12 @@ it("requires a successful account read before enabling mutations", async () => {
   await screen.findByText(
     "Accounts could not be loaded. Try again before making changes."
   );
-  expect(screen.getByRole("button", { name: "Create account" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Add Account" })).toBeDisabled();
   await press("Try again");
-  expect(screen.getByRole("button", { name: "Create account" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Add Account" })).toBeEnabled();
 });
 
-it("presents immutable opening information and refreshes tracked balances on focus", async () => {
+it("edits the opening date without crossing an existing transaction or changing the opening balance", async () => {
   const categories = createDemoCategorySource({ catalog: false });
   await categories.create("Food");
   const { accounts: source, transactions } = createDemoFinanceSources(
@@ -197,6 +213,7 @@ it("presents immutable opening information and refreshes tracked balances on foc
   await press("View balance for BMO Chequing");
   expect(screen.getByText("Opening date: 2024-01-01")).toBeVisible();
   expect(screen.getByText("Opening balance: -12.34 CAD")).toBeVisible();
+  expect(screen.queryByText(/cannot be edited/)).toBeNull();
   expect(
     screen.getByText(/Tracked balance as of .*: -12.34 CAD/)
   ).toBeVisible();
@@ -222,15 +239,33 @@ it("presents immutable opening information and refreshes tracked balances on foc
   });
   view.rerender(<AccountManagement {...props} active />);
   await screen.findByText(/Tracked balance as of .*: -13.34 CAD/);
-  await press("Rename BMO Chequing");
+  await press("Edit BMO Chequing");
   expect(screen.queryByLabelText("Opening balance (optional)")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Choose account opening date" })
+  ).toHaveProp("accessibilityHint", "2024-01-01");
   fireEvent.changeText(screen.getByLabelText("Account name"), "BMO Savings");
   fireEvent.press(screen.getByRole("combobox", { name: "Account type" }));
   fireEvent.press(screen.getByRole("radio", { name: "Cash" }));
+  await chooseAccountOpeningDate("2024-02-02");
   await press("Save account changes");
-  expect(await screen.findByText("Account details: BMO Savings")).toBeVisible();
+  expect(screen.getByText(/earliest transaction or transfer/)).toBeVisible();
+  expect((await source.get(row.id)).openingDate).toBe("2024-01-01");
+  expect(screen.getByLabelText("Account name")).toHaveProp(
+    "value",
+    "BMO Savings"
+  );
+  await chooseAccountOpeningDate("2024-02-01");
+  await press("Save account changes");
+  expect(
+    await screen.findByRole("header", { name: "BMO Savings" })
+  ).toBeVisible();
   expect(screen.getByText("Cash · CAD · Active")).toBeVisible();
-  expect((await source.get(row.id)).openingBalanceMinor).toBe(-1234);
+  expect(await source.get(row.id)).toMatchObject({
+    openingDate: "2024-02-01",
+    openingBalanceMinor: -1234,
+    balanceMinor: -1334
+  });
 });
 
 it("refreshes accounts automatically when the app returns to the foreground", async () => {
@@ -301,18 +336,35 @@ it("limits defaults to active compatible accounts and preserves archived details
   expect(
     screen.queryByRole("button", { name: "Use CIBC as default" })
   ).toBeNull();
-  await press("Clear default account");
-  expect(onDefault).toHaveBeenLastCalledWith(null);
+  expect(
+    screen.queryByRole("button", { name: "Clear default account" })
+  ).toBeNull();
+  await press("Add Account");
+  expect(screen.getAllByRole("header").at(-1)).toHaveTextContent("Add account");
+  expect(screen.getByRole("button", { name: "Create account" })).toBeVisible();
   await press("Archive Cash");
+  expect(screen.getByRole("header", { name: "Archive Cash?" })).toBeVisible();
+  expect(screen.queryByLabelText("Account name")).toBeNull();
   expect(
     screen.getByText(
-      /Future entries cannot select this account. Historical transactions and balances are preserved. If/
+      "Future entries cannot select this account. Historical transactions and balances are preserved."
     )
   ).toBeVisible();
-  await press("Keep account");
+  expect(screen.queryByRole("button", { name: "Edit Cash" })).toBeNull();
+  await press("Cancel");
+  await press("Edit Cash");
+  expect(screen.queryByRole("button", { name: "Archive" })).toBeNull();
+  expect(screen.getByLabelText("Account name")).toHaveProp("value", "Cash");
+  await press("Add Account");
+  expect(
+    screen.queryByRole("button", { name: "Save account changes" })
+  ).toBeNull();
+  expect(screen.getByLabelText("Account name")).toHaveProp("value", "");
+  await press("Archive Cash");
+  await press("Cancel");
   expect((await source.get(cad.id)).archivedAt).toBeNull();
   await press("Archive Cash");
-  await press("Confirm archive account");
+  await press("Archive");
   expect(onDefault).toHaveBeenLastCalledWith(null);
   view.rerender(
     <AccountManagement
@@ -325,11 +377,11 @@ it("limits defaults to active compatible accounts and preserves archived details
   expect(
     screen.queryByRole("button", { name: "Use Cash as default" })
   ).toBeNull();
-  expect(screen.queryByRole("button", { name: "Rename Cash" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Edit Cash" })).toBeNull();
+  expect(screen.getAllByRole("header")[0]).toHaveTextContent("CIBC");
+  expect(screen.getAllByRole("header")[1]).toHaveTextContent("Cash");
   await press("View balance for Cash");
-  expect(
-    screen.getByText(/Archived: .*Future entries cannot select/)
-  ).toBeVisible();
+  expect(screen.getByText(/^Archived: \d{4}-\d{2}-\d{2}$/)).toBeVisible();
   expect(screen.getByText(/Tracked balance as of .*: 0.00 CAD/)).toBeVisible();
 });
 
@@ -349,10 +401,11 @@ it("announces loading, retains invalid values and reports name conflicts without
   expect(
     screen.getByLabelText(/Loading accounts or confirming a change\./)
   ).toHaveProp("accessibilityState", { busy: true });
-  expect(screen.getByRole("button", { name: "Create account" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Add Account" })).toBeDisabled();
   await act(async () => {
     pending.resolve([]);
   });
+  await press("Add Account");
   await press("Create account");
   expect(create).not.toHaveBeenCalled();
   expect(screen.getByRole("alert")).toBeVisible();
@@ -385,8 +438,9 @@ it("distinguishes a confirmed create followed by a failed refresh from an uncert
     />
   );
   await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Create account" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Add Account" })).toBeEnabled()
   );
+  await press("Add Account");
   fireEvent.changeText(screen.getByLabelText("Account name"), "Cash");
   await press("Create account");
   expect(
@@ -394,7 +448,7 @@ it("distinguishes a confirmed create followed by a failed refresh from an uncert
       "Accounts could not be loaded. Try again before making changes."
     )
   ).toBeVisible();
-  expect(screen.getByRole("button", { name: "Create account" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Add Account" })).toBeDisabled();
   expect(
     screen.queryByRole("button", {
       name: "I reviewed accounts; enable changes"
@@ -403,7 +457,8 @@ it("distinguishes a confirmed create followed by a failed refresh from an uncert
   expect(list).toHaveBeenCalledTimes(3);
   await press("Try again");
   expect(create).toHaveBeenCalledTimes(1);
-  expect(screen.getByLabelText("Account name")).toHaveProp("value", "");
+  expect(screen.queryByLabelText("Account name")).toBeNull();
+  expect(screen.getByRole("button", { name: "Add Account" })).toBeEnabled();
 });
 
 it("requires explicit review after an uncertain account write", async () => {
@@ -425,8 +480,9 @@ it("requires explicit review after an uncertain account write", async () => {
     />
   );
   await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Create account" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Add Account" })).toBeEnabled()
   );
+  await press("Add Account");
   fireEvent.changeText(screen.getByLabelText("Account name"), "Cash");
   await press("Create account");
   expect(
@@ -517,9 +573,9 @@ it("hides details immediately during a pending read and keeps late balances hidd
   );
   await screen.findByRole("header", { name: row.name });
   await press(`View balance for ${row.name}`);
-  expect(screen.getByText(`Account details: ${row.name}`)).toBeVisible();
+  expect(screen.getByText(`Opening date: ${row.openingDate}`)).toBeVisible();
   await press(`Hide balance for ${row.name}`);
-  expect(screen.queryByText(`Account details: ${row.name}`)).toBeNull();
+  expect(screen.queryByText(`Opening date: ${row.openingDate}`)).toBeNull();
   await act(async () => {
     pending.resolve({ ...row, asOf: row.openingDate, balanceMinor: 123456 });
   });

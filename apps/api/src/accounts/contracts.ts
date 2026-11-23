@@ -13,7 +13,11 @@ export const accountInput = z.strictObject({
   openingDate: calendarDate
 });
 export const accountPatch = z
-  .strictObject({ name: financeName.optional(), type: accountType.optional() })
+  .strictObject({
+    name: financeName.optional(),
+    type: accountType.optional(),
+    openingDate: calendarDate.optional()
+  })
   .refine((value) => Object.keys(value).length > 0);
 export const accountQuery = z.strictObject({
   status: z.enum(["active", "archived", "all"]).default("active"),

@@ -147,12 +147,30 @@ export function createAccountService(db: PrismaClient) {
             "ACCOUNT_ARCHIVED",
             "Archived accounts cannot be changed."
           );
+        const openingDate = input.openingDate
+          ? new Date(`${input.openingDate}T00:00:00.000Z`)
+          : undefined;
+        // Transfers are stored as two postings, so this also checks both legs.
+        if (
+          openingDate &&
+          openingDate > row.openingDate &&
+          (await tx.transaction.findFirst({
+            where: { userId, accountId: id, date: { lt: openingDate } },
+            select: { id: true }
+          }))
+        )
+          throw new ApiError(
+            409,
+            "OPENING_DATE_AFTER_ACTIVITY",
+            "Choose an opening date on or before the account's earliest transaction or transfer."
+          );
         return serialize(
           await tx.account.update({
             where: { id, userId },
             data: {
               ...(input.name !== undefined ? { name: input.name } : {}),
-              ...(input.type !== undefined ? { type: input.type } : {})
+              ...(input.type !== undefined ? { type: input.type } : {}),
+              ...(openingDate ? { openingDate } : {})
             }
           })
         );

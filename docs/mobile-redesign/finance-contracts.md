@@ -185,10 +185,10 @@ server checks it against the permanent chosen preference in the same transaction
 This field is an assertion against stale UI, not a second currency-selection
 feature. An account without a chosen currency returns `409 CURRENCY_REQUIRED`; an incompatible assertion returns `409 PREFERENCE_CHANGED`.
 
-`PATCH /v1/accounts/:id` permits a nonempty name/type patch. Currency/opening
-information are immutable from creation; any future
-opening-balance correction flow must be explicitly designed rather than silently
-changing a historical baseline. `POST /v1/accounts/:id/archive` takes `{}` and is
+`PATCH /v1/accounts/:id` accepts a nonempty patch of name, type, or opening date.
+The opening date can be on or before the earliest transaction or transfer, and
+a date after existing activity returns `409 OPENING_DATE_AFTER_ACTIVITY`.
+Currency and opening balance are fixed at creation. `POST /v1/accounts/:id/archive` takes `{}` and is
 idempotent. Do not hard-delete referenced accounts. Clear an archived default.
 
 Balance as of D = opening balance at the start of the opening date + income
