@@ -105,10 +105,10 @@ Expo mobile app  ── HTTPS/JSON ──>  Fastify REST API  ──>  PostgreSQ
 - Issue #93 requires explicit permanent currency selection after sign-in. The
   nullable preference has no database default; CAD is only the UI suggestion.
   Confirmation is write-once under the owner lock and database trigger, with
-  identical retries allowed. Settings is read-only; no first-posting lock exists.
+  identical retries allowed. Confirmation during setup locks the choice immediately.
 - Main finance routes require chosen currency and at least one active account.
   Derived readiness is refreshed on route entry, foreground and mutations.
-  Setup/Settings/sign-out remain accessible, and account repair preserves drafts.
+  Setup, Accounts and sign-out remain accessible during repair, which preserves drafts.
 - #94 removes Transaction.currency in favor of immutable Account.currency.
   Owner-safe composite account references enforce ownership; service and SQL
   guards reject cross-currency reassignment without changing integer amounts.
@@ -130,9 +130,10 @@ Expo mobile app  ── HTTPS/JSON ──>  Fastify REST API  ──>  PostgreSQ
 
 ## Finance and mobile boundaries
 
-- Add transaction becomes the normal post-login home; History, Overview and
-  Settings are persistent destinations. Category/account pickers return to the
-  session-owned draft. Session restoration/authorization still precede finance UI.
+- Add is the post-login home, and the avatar menu opens Accounts at `/settings`.
+  Moving among Add, History, Overview and Accounts retains the session-owned
+  draft. Sign out and Exit demo discard it without a confirmation. Session
+  restoration and authorization precede finance UI.
 - [TransactionEntry](../apps/mobile/src/transaction-entry.tsx) renders the shared
   Add and Edit form. [EntryProvider](../apps/mobile/src/entry-context.tsx) owns
   the draft, validation, and save recovery. Demo History and the transaction
@@ -157,9 +158,12 @@ Expo mobile app  ── HTTPS/JSON ──>  Fastify REST API  ──>  PostgreSQ
   separate. Historical data backfill/reconciliation is removed. Demo imports the
   framework-free manifest and isolates all mutable data/recents by session.
   Every report/recency query continues filtering transactions by current user.
-- Financial accounts are manually named, owned ledgers managed in Settings.
-  Opening balance is optional/default zero; balance reads use exact persisted
-  postings. A name such as BMO does not create a bank integration.
+- Financial accounts are manually named, owned ledgers managed in Accounts.
+  Opening balance defaults to zero and is fixed after creation. Balance reads use
+  exact persisted postings. A name such as BMO does not create a bank integration.
+  The API checks opening-date edits under the same
+  owner lock used for posting writes. The [opening-date migration](../apps/api/prisma/migrations/20261123000000_edit_account_opening_date/migration.sql)
+  updates the database trigger to enforce the same limit, including both transfer legs.
 - A same-currency transfer is one aggregate with two balanced postings committed
   atomically. Logical history shows it once. Income/expense/category summaries
   exclude its legs; account balances include them. Opening balances are not income.

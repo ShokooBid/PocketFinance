@@ -23,12 +23,11 @@ tracking and statement import are useful, understandable, and dependable.
 
 ### Identity and privacy
 
-- Register, sign in, refresh a session, sign out, and view basic account/privacy
-  information.
+- Register, sign in, refresh a session, and sign out from the avatar menu.
 - Support email/password and Google sign-in, with persistent mobile sessions
   across app restarts. Google-only accounts do not require a PocketFinance password.
-- Allow explicitly linking Google to an existing account after proving both
-  identities. Do not automatically merge accounts with matching email addresses.
+- The API supports explicitly linking Google to an existing account after proving
+  both identities. Matching email addresses alone never merge accounts.
 - Restore sessions from secure storage, rotate refresh tokens, and revoke the
   current session on logout. Expired/revoked sessions require sign-in again.
 - Isolate each user's records. A user can only create, read, update, archive, or
@@ -48,12 +47,14 @@ tracking and statement import are useful, understandable, and dependable.
 
 ### Named financial accounts and currency
 
-- Add/manage user-named accounts such as BMO, CIBC and Cash in Settings. No bank
-  connection is implied. Opening balance is optional and defaults to zero.
+- Manage user-named accounts such as BMO, CIBC and Cash in Accounts. Opening
+  balance defaults to zero and is fixed after creation. The opening date can be
+  changed to the earliest transaction or transfer date or any earlier date.
+  Account names do not imply a bank connection. A default account is optional.
 - Require explicit currency selection after sign-in, with CAD suggested locally.
-  The choice is permanent immediately; Settings displays it read-only. A missing
-  choice or no active accounts blocks main finance/transaction routes, including
-  deep links. Setup, Settings and sign-out remain available; repair retains drafts.
+  The choice becomes permanent when confirmed. A missing choice or no active
+  accounts blocks main finance and transaction routes, including deep links.
+  Setup, Accounts and sign-out remain available during repair, which retains drafts.
   Account creation inherits the permanent choice. No first-posting lock exists.
   #94 removes duplicated transaction currency and legacy finance backfill code;
   #95 stores immutable request identity on each manual transaction, with retry
@@ -74,9 +75,10 @@ tracking and statement import are useful, understandable, and dependable.
   in responses, formatting and reports; transaction writes omit it. Reject
   cross-currency reassignment; never convert or reinterpret the amount. No merchant/payee/payer
   fields in redesigned input; preserve legacy stored values during migration.
-- Make Add the post-login home with History, Overview and Settings destinations.
-  Use a custom digits/decimal/backspace/confirm keypad with no arithmetic. Confirm
-  validates the complete form and saves once; preserve drafts during navigation.
+- Make Add the post-login home, with History and Overview in the bottom bar and
+  Accounts in the avatar menu. The custom digits, decimal, backspace and confirm
+  keypad validates the complete form and saves once on confirmation. Drafts
+  persist during navigation and end on sign-out or demo exit.
 - Validate all required fields and give accessible error feedback.
 
 ### Reports and history
