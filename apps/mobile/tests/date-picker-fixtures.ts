@@ -3,17 +3,23 @@ import DateTimePicker from "react-native-ui-datepicker";
 
 // Exercise the library's public selection callback in longer finance flows.
 // The date-picker tests separately exercise its real calendar buttons.
-export async function chooseTransactionDate(date: string) {
+async function chooseSingleDate(label: string, date: string) {
   await act(async () => {
-    fireEvent.press(
-      screen.getByRole("button", { name: "Choose transaction date" })
-    );
+    fireEvent.press(screen.getByRole("button", { name: label }));
   });
   await act(async () => {
     fireEvent(screen.UNSAFE_getByType(DateTimePicker), "change", {
       date: new Date(`${date}T12:00:00`)
     });
   });
+}
+
+export function chooseTransactionDate(date: string) {
+  return chooseSingleDate("Choose transaction date", date);
+}
+
+export function chooseAccountOpeningDate(date: string) {
+  return chooseSingleDate("Choose account opening date", date);
 }
 
 export async function chooseDateRange(from: string, to: string) {

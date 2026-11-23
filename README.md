@@ -14,10 +14,11 @@ placeholder. Use synthetic data when evaluating the app.
 
 ## What you can do
 
-- Sign in with email/password or Google on a configured native build; restore
-  sessions from secure device storage and sign out on one or all devices.
-- Choose a permanent ledger currency and create financial accounts with opening
-  balances and an optional default account.
+- Sign in with email/password or Google on a configured native build, restore
+  sessions from secure device storage, and sign out from the avatar menu.
+- Choose a permanent ledger currency and manage financial accounts from the
+  avatar menu. Set an opening balance at creation and edit the opening date to
+  the day of the earliest transaction or transfer, or any earlier date.
 - Organize transactions with shared default categories and personal categories,
   including subcategories and archival that preserves history.
 - Add, edit, delete, and filter income and expenses by account, category, date,
@@ -46,7 +47,8 @@ web supports demo mode only.
 
 1. Confirm a ledger currency and create a demo account with an optional opening balance.
 2. Use **Add** to record synthetic income and expenses, assigning a parent category
-   or a subcategory. Create another account to try a transfer.
+   or a subcategory. Open **Accounts** from the avatar menu and use **Add Account**
+   to create a second account for a transfer.
 3. Open **History** to filter records or select one for editing. Transfers appear once.
 4. Open **Overview → Reports** to see the full current month immediately. Expand a
    category to reconcile its direct entries and subcategories.

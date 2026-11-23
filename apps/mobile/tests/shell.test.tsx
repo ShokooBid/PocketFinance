@@ -19,7 +19,10 @@ import DateTimePicker from "react-native-ui-datepicker";
 import { currentMonth, monthRange } from "../src/dashboard-data";
 import { parsePreviewState } from "../src/navigation";
 import { localDate } from "../src/entry-data";
-import { chooseTransactionDate } from "./date-picker-fixtures";
+import {
+  chooseAccountOpeningDate,
+  chooseTransactionDate
+} from "./date-picker-fixtures";
 import * as sessionModule from "../src/session";
 import * as runtime from "../src/auth/runtime";
 import {
@@ -74,9 +77,9 @@ async function field(label: string, value: string) {
   });
 }
 
-async function openSettings() {
+async function openAccounts() {
   await press("User menu");
-  await tap(screen.getByRole("link", { name: "Open settings" }));
+  await tap(screen.getByRole("link", { name: "Accounts" }));
 }
 
 async function chooseCategory(label: string) {
@@ -111,12 +114,12 @@ async function enterDemo(currency: "CAD" | "JPY" | "KWD" = "CAD") {
   await press(`Confirm ${currency} permanently`);
   await screen.findByRole("header", { name: "Set up an account screen" });
   await field("Account name", "Demo setup cash");
-  await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
+  await chooseAccountOpeningDate("2024-01-01");
   await press("Create account");
   expect(
     await screen.findByRole("header", { name: "New transaction screen" })
   ).toBeVisible();
-  // Existing reporting/settings flows start at Overview; #72 cases use Add.
+  // Reporting and account flows start at Overview; #72 cases use Add.
   await tap(screen.getByRole("link", { name: "Overview" }));
   await screen.findByRole("header", { name: "Overview screen" });
 }
@@ -129,10 +132,10 @@ afterEach(() => {
 });
 
 describe("session navigation", () => {
-  // This first flow loads the router and calendar dependency cold, switches
-  // tabs and checks both confirmation paths. Budget the complete integration
+  // This first flow loads the router and calendar dependency cold and switches
+  // tabs before leaving the demo. Budget the complete integration
   // flow separately while keeping each element lookup's deadline unchanged.
-  it("keeps Add drafts across tabs and Settings and confirms leaving without a discard button", async () => {
+  it("keeps Add drafts across tabs and Accounts and exits the demo without a prompt", async () => {
     await openShell();
     await enterDemo();
     await tap(screen.getByRole("link", { name: "Add" }));
@@ -141,9 +144,9 @@ describe("session navigation", () => {
     await press("Decimal point");
     await press("Digit 2");
     await field("Note (optional)", "Keep across tabs");
-    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
-    for (const name of ["History", "Overview", "Settings"] as const) {
-      if (name === "Settings") await openSettings();
+    expect(screen.queryByRole("link", { name: "Accounts" })).toBeNull();
+    for (const name of ["History", "Overview", "Accounts"] as const) {
+      if (name === "Accounts") await openAccounts();
       else await tap(screen.getByRole("link", { name }));
       await tap(screen.getByRole("link", { name: "Add" }));
       expect(await screen.findByLabelText("Amount")).toHaveProp("value", "1.2");
@@ -159,29 +162,27 @@ describe("session navigation", () => {
       "placeholder",
       "Description (optional)"
     );
-    await openSettings();
+    await openAccounts();
     await press("User menu");
     await press("Exit demo and return to sign in");
-    await press("Keep transaction draft");
-    await tap(screen.getByRole("link", { name: "Add" }));
-    expect(screen.getByLabelText("Amount")).toHaveProp("value", "1.2");
-    await press("User menu");
-    await press("Exit demo and return to sign in");
-    await press("Confirm discard draft");
     expect(
       await screen.findByRole("header", { name: "Sign in screen" })
     ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Confirm discard draft" })
+    ).toBeNull();
   }, 30000);
 
   it("opens History after saving and uses the shared editor for a selected record", async () => {
     await openShell();
     await enterDemo();
     await tap(screen.getByRole("link", { name: "Add" }));
-    await openSettings();
+    await openAccounts();
+    await press("Add Account");
     await field("Account name", "Spending");
-    await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
+    await chooseAccountOpeningDate("2024-01-01");
     await press("Create account");
-    await press("Back to previous screen");
+    await navigate(() => router.back());
     await chooseAccount("Demo setup cash");
     await chooseCategory("Food & Drinks");
     await press("Digit 7");
@@ -320,7 +321,7 @@ describe("session navigation", () => {
     ).toBeVisible();
   }, 20000);
 
-  it("creates an account through Settings and returns to every unchanged draft field", async () => {
+  it("creates an account through Accounts and returns to every unchanged draft field", async () => {
     await openShell();
     await enterDemo();
     await navigate(() => router.push("/categories"));
@@ -338,17 +339,24 @@ describe("session navigation", () => {
     await press("Choose account");
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
     expect(
-      screen.queryByRole("button", { name: "Add an account in Settings" })
+      screen.queryByRole("button", { name: "Open Accounts to add an account" })
     ).toBeNull();
     await press("Choose account");
-    await openSettings();
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Create account" })
-      ).toBeEnabled()
-    );
+    await openAccounts();
+    expect(
+      await screen.findByRole("header", { name: "Accounts screen" })
+    ).toBeVisible();
+    expect(screen.queryByLabelText("Account name")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Back to previous screen" })
+    ).toBeNull();
+    expect(screen.queryByText("Default currency: CAD")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Manage categories" })
+    ).toBeNull();
+    await press("Add Account");
     await field("Account name", "BMO Chequing");
-    await field("Account opening date (YYYY-MM-DD)", "2026-01-01");
+    await chooseAccountOpeningDate("2026-01-01");
     await press("Create account");
     expect(
       screen.getByRole("button", {
@@ -356,7 +364,7 @@ describe("session navigation", () => {
         selected: false
       })
     ).toBeVisible();
-    await press("Back to previous screen");
+    await navigate(() => router.back());
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "Choose account" })
@@ -400,12 +408,8 @@ describe("session navigation", () => {
     await screen.findByText("New transaction");
     await field("Amount", "8.50");
     await field("Note (optional)", "System Back draft");
-    await openSettings();
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Create account" })
-      ).toBeEnabled()
-    );
+    await openAccounts();
+    await press("Add Account");
     await field("Account name", "Cash");
     await press("Create account");
     await press("Use Cash as default");
@@ -438,7 +442,7 @@ describe("session navigation", () => {
 
   // This full navigation flow also pays for the first cold router render.
   // Allow slower Windows/CI runs without relaxing individual lookup timeouts.
-  it("keeps a demo draft through Settings with currency already read-only before saving", async () => {
+  it("keeps a demo draft through Accounts after confirming its permanent currency", async () => {
     await openShell();
     await enterDemo();
     await navigate(() => router.push("/categories"));
@@ -450,8 +454,10 @@ describe("session navigation", () => {
     await tap(screen.getByRole("link", { name: "Add" }));
     await screen.findByText("New transaction");
     await field("Amount", "12.34");
-    await navigate(() => router.push("/settings"));
-    expect(await screen.findByText("Default currency: CAD")).toBeVisible();
+    await openAccounts();
+    expect(
+      await screen.findByRole("header", { name: "Accounts screen" })
+    ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: /Choose currency|Default currency/ })
     ).toBeNull();
@@ -461,8 +467,7 @@ describe("session navigation", () => {
     await chooseCategory("Currency food");
     await press("Save transaction");
     await screen.findByRole("header", { name: "History screen" });
-    await navigate(() => router.push("/settings"));
-    expect(await screen.findByText("Default currency: CAD")).toBeVisible();
+    expect(await screen.findByText(/\b12\.34 CAD\b/)).toBeVisible();
   }, 15000);
 
   it("hides transaction deep links until currency and an active account are confirmed", async () => {
@@ -489,10 +494,12 @@ describe("session navigation", () => {
     expect(
       h.fetcher.mock.calls.filter((call) => call[1]?.method === "PATCH")
     ).toHaveLength(0);
-    await openSettings();
-    expect(await screen.findByText("Google: not linked")).toBeVisible();
+    await openAccounts();
+    expect(
+      await screen.findByRole("button", { name: "Continue setup" })
+    ).toBeVisible();
     expect(screen.queryByRole("button", { name: "Create account" })).toBeNull();
-    await press("Back to previous screen");
+    await navigate(() => router.back());
     expect(
       await screen.findByRole("header", { name: "Choose your currency screen" })
     ).toBeVisible();
@@ -507,7 +514,7 @@ describe("session navigation", () => {
     await field("Note (optional)", "Retained through account repair");
     await navigate(() => router.push("/settings"));
     await press("Archive Demo setup cash");
-    await press("Confirm archive account");
+    await press("Archive");
     await navigate(() => router.back());
     expect(
       await screen.findByRole("header", { name: "Set up an account screen" })
@@ -691,19 +698,30 @@ describe("session navigation", () => {
       await field("Password", "synthetic password");
       await press("Sign in with email");
       await screen.findByRole("header", { name: "New transaction screen" });
+      await waitFor(() =>
+        expect(screen.getByLabelText("Note (optional)")).toHaveProp(
+          "editable",
+          true
+        )
+      );
+      await field("Note (optional)", "Alice unsaved draft");
       await tap(screen.getByRole("link", { name: "Overview" }));
       await navigate(() => router.push("/categories"));
       expect(await screen.findByText(category.name)).toBeVisible();
       expect(screen.queryByText(/Demo only/)).toBeNull();
       await press("Back to previous screen");
-      await openSettings();
+      await openAccounts();
       await press("User menu");
       await press("Sign out");
       await screen.findByRole("header", { name: "Sign in screen" });
+      expect(
+        screen.queryByRole("button", { name: "Confirm discard draft" })
+      ).toBeNull();
       await field("Email address", bob.email);
       await field("Password", "synthetic password");
       await press("Sign in with email");
       await screen.findByRole("header", { name: "New transaction screen" });
+      expect(screen.getByLabelText("Note (optional)")).toHaveProp("value", "");
       await tap(screen.getByRole("link", { name: "Overview" }));
       const pending = deferred<Response>();
       delayedCategories = pending.promise;
@@ -776,7 +794,7 @@ describe("session navigation", () => {
     await tap(screen.getByRole("link", { name: "History" }));
     await navigate(() => router.back());
     expect(shell.getPathname()).toBe("/overview");
-    await openSettings();
+    await openAccounts();
     await press("User menu");
     await press("Exit demo and return to sign in");
     expect(shell.getPathname()).toBe("/sign-in");
@@ -797,9 +815,9 @@ describe("session navigation", () => {
       await screen.findByRole("header", { name: "Set up an account screen" })
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "User menu" })).toBeVisible();
-    expect(screen.queryByRole("link", { name: "Open settings" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Accounts" })).toBeNull();
     await field("Account name", "Menu test account");
-    await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
+    await chooseAccountOpeningDate("2024-01-01");
     await press("Create account");
     await screen.findByRole("header", { name: "New transaction screen" });
     for (const path of [
@@ -807,7 +825,6 @@ describe("session navigation", () => {
       "/categories",
       "/import",
       "/settings",
-      "/privacy",
       "/"
     ] as const) {
       await navigate(() => router.replace(path));
@@ -815,19 +832,20 @@ describe("session navigation", () => {
       expect(screen.getAllByRole("button", { name: "User menu" })).toHaveLength(
         1
       );
-      expect(screen.queryByRole("link", { name: "Open settings" })).toBeNull();
+      expect(screen.queryByRole("link", { name: "Accounts" })).toBeNull();
       expect(
         screen.queryByRole("button", {
           name: "Exit demo and return to sign in"
         })
       ).toBeNull();
       fireEvent(avatar, "hoverIn");
-      expect(screen.getByRole("link", { name: "Open settings" })).toBeVisible();
+      expect(screen.getByRole("link", { name: "Accounts" })).toBeVisible();
+      expect(screen.queryByRole("link", { name: "Profile" })).toBeNull();
       expect(
         screen.getByRole("button", { name: "Exit demo and return to sign in" })
       ).toBeVisible();
       fireEvent(avatar, "hoverOut");
-      expect(screen.queryByRole("link", { name: "Open settings" })).toBeNull();
+      expect(screen.queryByRole("link", { name: "Accounts" })).toBeNull();
     }
     await press("User menu");
     await press("Exit demo and return to sign in");
@@ -846,7 +864,7 @@ describe("session navigation", () => {
     await navigate(() => router.push("/categories"));
     expect(await screen.findByText("Synthetic demo category")).toBeVisible();
     await press("Back to previous screen");
-    await openSettings();
+    await openAccounts();
     await press("User menu");
     await press("Exit demo and return to sign in");
     await enterDemo();
@@ -868,8 +886,9 @@ describe("session navigation", () => {
     await screen.findByText("Dashboard food");
     await press("Back to previous screen");
     await navigate(() => router.push("/settings"));
+    await press("Add Account");
     await field("Account name", "History cash");
-    await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
+    await chooseAccountOpeningDate("2024-01-01");
     await press("Create account");
     await navigate(() => router.back());
     await press(
@@ -981,7 +1000,7 @@ describe("session navigation", () => {
       })
     );
     await press("Apply");
-    await openSettings();
+    await openAccounts();
     await press("User menu");
     await press("Sign out");
     await screen.findByRole("header", { name: "Sign in screen" });
@@ -1017,17 +1036,6 @@ describe("session navigation", () => {
   it("applies the session currency to dashboard/new forms and resets it when leaving demo", async () => {
     await openShell();
     await enterDemo("KWD");
-    await openSettings();
-    await press("Privacy and data retention");
-    expect(
-      await screen.findByRole("header", {
-        name: "Privacy and data retention screen"
-      })
-    ).toBeVisible();
-    expect(screen.getByText(/no automatic retention expiry/)).toBeVisible();
-    await press("Back to Settings");
-    expect(screen.getByText("Default currency: KWD")).toBeVisible();
-    await tap(screen.getByRole("link", { name: "Overview" }));
     expect(
       await screen.findByRole("header", { name: /Income\. KWD 0.000\./ })
     ).toBeVisible();
@@ -1035,7 +1043,7 @@ describe("session navigation", () => {
     await press("Add transaction");
     expect(screen.getByLabelText("Account currency: KWD")).toBeVisible();
     await tap(screen.getByRole("link", { name: "Overview" }));
-    await openSettings();
+    await openAccounts();
     await press("User menu");
     await press("Exit demo and return to sign in");
     // A pristine Add view does not create a dirty draft.
@@ -1044,29 +1052,6 @@ describe("session navigation", () => {
       await screen.findByRole("header", { name: /Income\. CAD 0.00\./ })
     ).toBeVisible();
   }, 15000);
-
-  it("signs out all devices from Settings, clears navigation and displays unconfirmed revocation honestly", async () => {
-    const h = harness();
-    jest.mocked(runtime.createRuntimeSession).mockReturnValue(h.controller);
-    h.fetcher.mockImplementation(async (url) => {
-      const path = new URL(String(url)).pathname;
-      if (path === "/v1/me") return response(alice);
-      if (path === "/v1/auth/logout") throw new Error("offline");
-      return response({ items: [], nextCursor: null });
-    });
-    await openShell("/settings");
-    expect(screen.getByText("Google: not linked")).toBeVisible();
-    await press("Sign out on all devices");
-    await press("Confirm sign out on all devices");
-    expect(
-      await screen.findByRole("header", { name: "Sign in screen" })
-    ).toBeVisible();
-    expect(
-      screen.getByText(/Sign-out on all devices could not be confirmed/)
-    ).toBeVisible();
-    expect(h.disk()).toBeNull();
-    expect(router.canGoBack()).toBe(false);
-  });
 });
 
 describe("screen state previews", () => {
@@ -1113,39 +1098,6 @@ describe("screen state previews", () => {
     expect(screen.getByText("Nothing here yet")).toBeVisible();
   });
 
-  it("catches a real render failure and remounts a usable Settings screen", async () => {
-    await openShell();
-    await enterDemo();
-    await openSettings();
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Create account" })
-      ).toBeEnabled()
-    );
-    // React's expected development diagnostic contains only the synthetic error.
-    const diagnostic = jest
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
-    await press("Preview rendering error recovery");
-    expect(
-      screen.getByRole("header", { name: "Something went wrong screen" })
-    ).toBeVisible();
-    expect(screen.queryByText(/Synthetic rendering failure/)).toBeNull();
-    await press("Try again");
-    expect(
-      screen.getByRole("header", { name: "Settings screen" })
-    ).toBeVisible();
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Create account" })
-      ).toBeEnabled()
-    );
-    diagnostic.mockRestore();
-    await press("User menu");
-    await press("Exit demo and return to sign in");
-    expect(shell.getPathname()).toBe("/sign-in");
-  }, 15000);
-
   it("recovers from an unknown route", async () => {
     await openShell("/unknown-screen");
     expect(
@@ -1172,7 +1124,7 @@ describe("transfer navigation", () => {
     await field("Note (optional)", "Cash move");
     await press("Choose From Account");
     expect(
-      screen.queryByRole("button", { name: "Add an account in Settings" })
+      screen.queryByRole("button", { name: "Open Accounts to add an account" })
     ).toBeNull();
     await press("Demo setup cash · CAD");
     await press("Choose To Account");
@@ -1180,12 +1132,13 @@ describe("transfer navigation", () => {
       screen.queryByRole("button", { name: "Demo setup cash · CAD" })
     ).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Add an account in Settings" })
+      screen.queryByRole("button", { name: "Open Accounts to add an account" })
     ).toBeNull();
     await press("Choose To Account");
-    await press("Add an account in Settings");
+    await press("Open Accounts to add an account");
+    await press("Add Account");
     await field("Account name", "Savings");
-    await field("Account opening date (YYYY-MM-DD)", "2024-01-01");
+    await chooseAccountOpeningDate("2024-01-01");
     await press("Create account");
     await press("Return to transaction draft");
     expect(await screen.findByLabelText("Amount")).toHaveProp("value", "25");

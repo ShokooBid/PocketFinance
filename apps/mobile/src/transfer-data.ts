@@ -336,6 +336,13 @@ export function createDemoTransferLedger(
   };
   return {
     source: observeTransfers(source),
+    hasPostingBefore(accountId: string, date: string) {
+      return rows.some(
+        ({ resource: row }) =>
+          row.date < date &&
+          (row.fromAccountId === accountId || row.toAccountId === accountId)
+      );
+    },
     balanceAdjustment(accountId: string, asOf: string) {
       return rows.reduce(
         (sum, { resource: row }) =>

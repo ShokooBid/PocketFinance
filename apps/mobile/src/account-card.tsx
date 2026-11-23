@@ -90,7 +90,7 @@ export function AccountCard({
   viewDisabled,
   defaultEligible,
   onToggleDetails,
-  onRename,
+  onEdit,
   onDefault,
   onArchive,
   children
@@ -102,7 +102,7 @@ export function AccountCard({
   viewDisabled: boolean;
   defaultEligible: boolean;
   onToggleDetails: () => void;
-  onRename: () => void;
+  onEdit: () => void;
   onDefault: () => void;
   onArchive: () => void;
 }>) {
@@ -151,9 +151,9 @@ export function AccountCard({
           {!account.archivedAt && (
             <>
               <AccountAction
-                label={`Rename ${account.name}`}
+                label={`Edit ${account.name}`}
                 disabled={disabled}
-                onPress={onRename}
+                onPress={onEdit}
                 align="left"
               >
                 <AccountIcon name="rename" />

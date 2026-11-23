@@ -102,7 +102,7 @@ inheritance/ownership/active-account checks remain server-side guarantees.
 
 Main finance/transaction routes, including deep links/details, require the choice
 and at least one active account. Archiving all accounts is allowed and requires
-repair before finance access. Setup, Settings, privacy and sign-out remain
+repair before finance access. Setup, Accounts and sign-out remain
 accessible. Refresh failure is an error state, not a missing-account result.
 
 #94 removes persisted Transaction.currency and Account.legacyCurrency, their
@@ -180,15 +180,16 @@ isolated session memory.
 an explicit `asOf` date is supported for balance reads.
 
 `POST /v1/accounts` accepts `name`, `type`, `currency`, `openingDate` and optional
-`openingBalanceMinor` (default 0). The form copies currency from Settings; the
+`openingBalanceMinor` (default 0). The form uses the permanent currency choice. The
 server checks it against the permanent chosen preference in the same transaction.
 This field is an assertion against stale UI, not a second currency-selection
 feature. An account without a chosen currency returns `409 CURRENCY_REQUIRED`; an incompatible assertion returns `409 PREFERENCE_CHANGED`.
 
-`PATCH /v1/accounts/:id` permits a nonempty name/type patch. Currency/opening
-information are immutable from creation; any future
-opening-balance correction flow must be explicitly designed rather than silently
-changing a historical baseline. `POST /v1/accounts/:id/archive` takes `{}` and is
+`PATCH /v1/accounts/:id` accepts a nonempty patch of name, type, or opening date.
+The opening date can be on or before the earliest transaction or transfer. Any
+valid date is allowed when an account has no activity. A date after existing
+activity returns `409 OPENING_DATE_AFTER_ACTIVITY`.
+Currency and opening balance are fixed at creation. `POST /v1/accounts/:id/archive` takes `{}` and is
 idempotent. Do not hard-delete referenced accounts. Clear an archived default.
 
 Balance as of D = opening balance at the start of the opening date + income
@@ -415,8 +416,9 @@ input. Preserve the implemented envelope. Planned domain errors include:
 | 404 `NOT_FOUND`                                                  | Missing or foreign ID; no ownership disclosure.                                                              |
 | 409 `DEFAULT_CATEGORY_READ_ONLY`                                 | Personal additions are allowed; the fixed default itself cannot be changed.                                  |
 | 409 `CATEGORY_NAME_CONFLICT` / `ACCOUNT_NAME_CONFLICT`           | Correct a duplicate active name; preserve input.                                                             |
-| 409 `CURRENCY_LOCKED`                                            | Settings cannot change a ledger's recorded denomination after the confirmed event.                           |
-| 409 `PREFERENCE_CHANGED`                                         | Reload Settings/account creation context; do not reinterpret an entered balance.                             |
+| 409 `CURRENCY_LOCKED`                                            | The confirmed ledger currency is permanent.                                                                  |
+| 409 `PREFERENCE_CHANGED`                                         | Reload currency preferences and review the entered opening balance.                                          |
+| 409 `OPENING_DATE_AFTER_ACTIVITY`                                | Keep the edit and choose a date on or before the earliest transaction or transfer.                           |
 | 409 `IDEMPOTENCY_KEY_REUSED`                                     | Reconcile the existing operation; do not generate another key to force a retry.                              |
 | 422 `INVALID_ACCOUNT` / `INVALID_CATEGORY` / `CURRENCY_MISMATCH` | Correct current owned selection/values; an archived ancestor is not a new-assignment target.                 |
 | 422 `SUMMARY_AMOUNT_OUT_OF_RANGE`                                | Narrow the report period; never round a total.                                                               |
@@ -430,6 +432,10 @@ live guards and drops duplicated transaction currency and legacy account identit
 It performs no data reset, currency conversion or finance backfill. The retired
 `finance:migrate` command and its legacy upgrade rehearsals are removed; catalog
 initialization now uses `categories:init`; #96 removes `categories:backfill`.
+
+Issue #124 requires the [opening-date migration](../../apps/api/prisma/migrations/20261123000000_edit_account_opening_date/migration.sql)
+before deploying the account-edit API. It replaces the account validation trigger
+function and preserves existing records.
 
 Old development data preservation is not required by #94. The owner controls any
 development reset; implementation does not delete data or apply migrations. Keep

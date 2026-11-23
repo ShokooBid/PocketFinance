@@ -705,7 +705,7 @@ export function EntryProvider({ children }: PropsWithChildren) {
               ? "Wait for the current save or review to finish before leaving."
               : state.uncertain
                 ? "The save may already have succeeded. Leaving loses its retry identity. Review saved history before creating another transaction. Hard deletion also removes server replay protection."
-                : `Your unsaved ${state.draft.direction === "transfer" ? "transfer" : "transaction"} will be lost. You can switch tabs or open Settings without discarding it.`}
+                : `Your unsaved ${state.draft.direction === "transfer" ? "transfer" : "transaction"} will be lost. You can switch tabs or open Accounts without discarding it.`}
           </Body>
           <Button
             label={

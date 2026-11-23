@@ -12,6 +12,11 @@ and the [API source](../apps/api/src/openapi.ts) for current routes. Earlier
 future-tense text records the accepted plan; this update describes the implemented
 backend boundary.
 
+Mobile navigation update ([#124](https://github.com/ShokooBid/PocketFinance/issues/124)).
+The avatar menu offers **Accounts** and **Sign out** or **Exit demo**. Signing
+out or exiting the demo discards the transaction draft without a prompt. Google
+linking and all-device revocation are API capabilities.
+
 ## User experience
 
 The sign-in screen offers email/password and Continue with Google. Both lead to
@@ -80,8 +85,8 @@ authorization, or at-least-one-login-method rules.
    never use that claim alone to authorize access to an existing account.
 5. If the email matches an existing PocketFinance account, do not create a session
    for it or silently merge data. Return generic guidance to sign in with an
-   existing method, then explicitly link Google in Settings after recent
-   reauthentication and fresh Google proof. A subject already owned by another
+   existing method. The linking API requires recent reauthentication and fresh
+   Google proof. A subject already owned by another
    user cannot be reassigned. Handle uniqueness races without leaking account data.
 6. Successful login issues PocketFinance access/refresh credentials. Google ID
    tokens are not PocketFinance API bearer tokens. Request only identity scopes,
@@ -89,8 +94,8 @@ authorization, or at-least-one-login-method rules.
 
 For Google-only users, an email/password attempt fails generically. Adding a
 password, recovery, changing providers, and unlinking are deferred; do not show
-nonfunctional controls for them. Existing password users can explicitly link
-Google, preserving their existing user ID and finance records.
+nonfunctional controls for them. Explicit linking through the API preserves the
+existing user ID and finance records.
 
 These are application design choices informed by Google's
 [OpenID Connect verification guidance](https://developers.google.com/identity/openid-connect/openid-connect).

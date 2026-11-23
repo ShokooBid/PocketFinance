@@ -57,10 +57,13 @@ describe("account contracts", () => {
     for (const patch of [
       {},
       { currency: "USD" },
-      { openingDate: "2026-10-31" },
+      { openingDate: "2026-02-29" },
       { openingBalanceMinor: 1 }
     ])
       expect(accountPatch.safeParse(patch).success).toBe(false);
+    expect(accountPatch.safeParse({ openingDate: "2026-10-31" }).success).toBe(
+      true
+    );
     expect(preferencesPatch.safeParse({}).success).toBe(false);
     expect(preferencesPatch.safeParse({ defaultAccountId: null }).success).toBe(
       true

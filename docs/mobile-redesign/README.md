@@ -17,9 +17,21 @@ The implementation increments are tracked in
 [#69](https://github.com/ShokooBid/PocketFinance/issues/69).
 The #69 cleanup supersedes the earlier rollout/version instructions: current
 finance uses one `/v1` contract without feature flags. The linked GitHub issues
-preserve the implementation history. Settings accounts and account-linked entry are wired
+preserve the implementation history. Accounts and account-linked entry are wired
 to the live API. Manual entry, same-currency transfers and Reports are implemented;
 statement processing and Charts remain future work.
+
+## Accounts update
+
+Issue [#124](https://github.com/ShokooBid/PocketFinance/issues/124) puts account
+management in the avatar menu, groups active accounts above archived accounts,
+and uses the transaction-delete dialog layout for archive confirmation. The
+account editor can change the opening date through the earliest transaction or
+transfer. The account form keeps opening-balance entry at creation. Accounts
+replaces the general Settings screen, and the Privacy screen is removed. Sign out
+and Exit demo discard the session draft without prompting. The mock-based setup
+redesign is tracked in the issue. See the [current UX](ux.md#accounts-and-currency)
+and [account API](finance-contracts.md#account-endpoints).
 
 ## Overview Reports implementation (2026-11-17)
 
@@ -96,21 +108,21 @@ The linked GitHub issues and verification record preserve historical behavior.
 These decisions come from the user's explicit instructions and answers, rather
 than assumptions taken from the supplied design images.
 
-| Topic                | Confirmed behavior                                                                                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Home                 | Add transaction is the main page after login.                                                                                                                       |
-| Accounts             | Users define named accounts such as BMO, CIBC and Cash; add/manage them in Settings. Bank names do not imply bank connections.                                      |
-| Currency             | Explicitly choose once after sign-in; CAD is a local suggestion. The saved choice is permanent immediately and read-only in Settings.                               |
-| Foreign exchange     | Excluded. No conversion, exchange rates or cross-currency transfers.                                                                                                |
-| Default categories   | One approved shared 80-row catalog; users cannot rename, archive or reparent defaults. Personal rows remain private.                                                |
-| Personal categories  | Users can create root categories and subcategories under either a default root or a personal root.                                                                  |
-| Category selection   | Select either a parent category or a subcategory.                                                                                                                   |
-| Merchant/payee/payer | Leave these fields out of the redesigned transaction form. Preserve existing stored merchant values during migration.                                               |
-| Description          | One optional description/note field. No separate merchant or payer input.                                                                                           |
-| Amount entry         | Custom keypad with digits, decimal, backspace and confirm. Confirm validates all fields and saves the transaction. No addition/subtraction or arithmetic operators. |
-| Opening balance      | Optional, defaulting to zero, so accounts can show tracked balances.                                                                                                |
-| Statements           | Select a specific account for CSV/PDF uploads; keep that account visible through review and confirmation. Processing arrives in later issues.                       |
-| AI                   | Reserve text/voice/receipt entry points now; functionality arrives later and requires editable drafts plus explicit confirmation.                                   |
+| Topic                | Confirmed behavior                                                                                                                                                      |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Home                 | Add transaction is the main page after login.                                                                                                                           |
+| Accounts             | Users add and manage named accounts in Accounts. The opening date can be edited through the earliest transaction or transfer. Bank names do not imply bank connections. |
+| Currency             | Explicitly choose once after sign-in. CAD is a local suggestion and confirmation fixes the currency immediately.                                                        |
+| Foreign exchange     | Excluded. No conversion, exchange rates or cross-currency transfers.                                                                                                    |
+| Default categories   | One approved shared 80-row catalog; users cannot rename, archive or reparent defaults. Personal rows remain private.                                                    |
+| Personal categories  | Users can create root categories and subcategories under either a default root or a personal root.                                                                      |
+| Category selection   | Select either a parent category or a subcategory.                                                                                                                       |
+| Merchant/payee/payer | Leave these fields out of the redesigned transaction form. Preserve existing stored merchant values during migration.                                                   |
+| Description          | One optional description/note field. No separate merchant or payer input.                                                                                               |
+| Amount entry         | Custom keypad with digits, decimal, backspace and confirm. Confirm validates all fields and saves the transaction. No addition/subtraction or arithmetic operators.     |
+| Opening balance      | Optional at creation, defaults to zero, and stays fixed for tracked balance calculations.                                                                               |
+| Statements           | Select a specific account for CSV/PDF uploads; keep that account visible through review and confirmation. Processing arrives in later issues.                           |
+| AI                   | Reserve text/voice/receipt entry points now; functionality arrives later and requires editable drafts plus explicit confirmation.                                       |
 
 ## Final answers and their consequences
 

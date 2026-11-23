@@ -163,27 +163,30 @@ export function transactionFailureMessage(error: unknown) {
   }
   return "The change could not be confirmed. Reload and review saved transactions before deciding whether to submit again.";
 }
-export function createDemoTransactionSource(
-  categories: CategorySource,
-  accounts: Pick<AccountSource, "list">,
-  beforeWrite?: (currency: Currency, previous?: Transaction) => void
-): TransactionSource {
-  type StoredTransaction = Omit<Transaction, "currency"> & {
-    clientRequestId: string;
-    creationFingerprint: string;
-  };
-  let rows: StoredTransaction[] = [];
-  let sequence = 0;
-  // Serialize demo writes too: validation awaits must not let equal creates race.
+export function createDemoWriteQueue() {
   let writes = Promise.resolve();
-  function write<T>(action: () => Promise<T>) {
+  return function write<T>(action: () => Promise<T>) {
     const result = writes.then(action);
     writes = result.then(
       () => {},
       () => {}
     );
     return result;
-  }
+  };
+}
+
+export function createDemoTransactionSource(
+  categories: CategorySource,
+  accounts: Pick<AccountSource, "list">,
+  beforeWrite?: (currency: Currency, previous?: Transaction) => void,
+  write = createDemoWriteQueue()
+) {
+  type StoredTransaction = Omit<Transaction, "currency"> & {
+    clientRequestId: string;
+    creationFingerprint: string;
+  };
+  let rows: StoredTransaction[] = [];
+  let sequence = 0;
   async function serialize(row: StoredTransaction): Promise<Transaction> {
     const account = (await accounts.list()).find(
       (item) => item.id === row.accountId
@@ -230,7 +233,7 @@ export function createDemoTransactionSource(
       throw new ClientFailure("validation");
     return account.currency;
   }
-  return observeTransactions({
+  const source = observeTransactions({
     async demoSnapshot(filter) {
       return (await Promise.all(rows.map(serialize)))
         .filter(
@@ -348,4 +351,10 @@ export function createDemoTransactionSource(
       });
     }
   });
+  return {
+    ...source,
+    hasPostingBefore(accountId: string, date: string) {
+      return rows.some((row) => row.accountId === accountId && row.date < date);
+    }
+  };
 }

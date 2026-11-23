@@ -1,43 +1,9 @@
 import { useState } from "react";
-import { Body, Button, StateNotice } from "./ui";
+import { Body, Button } from "./ui";
 import { currencyExponents, type Currency } from "./transaction-data";
-import type { CurrencySettingsState } from "./preference-data";
-
-export function CurrencySettings({
-  defaultCurrency,
-  state
-}: {
-  defaultCurrency: Currency | null;
-  state?: CurrencySettingsState;
-}) {
-  return (
-    <>
-      <Body>Default currency: {defaultCurrency ?? "Not chosen"}</Body>
-      <Body>
-        Choose your currency once during setup. It cannot be changed afterwards.
-        Existing amounts are never converted.
-      </Body>
-      {state?.status === "loading" && (
-        <StateNotice
-          kind="loading"
-          title="Loading currency settings"
-          message="Checking your permanent currency choice."
-        />
-      )}
-      {state?.error && (
-        <StateNotice
-          kind="error"
-          title="Currency settings need attention"
-          message={state.error}
-          onRetry={() => void state.reload()}
-        />
-      )}
-    </>
-  );
-}
 
 // Selection is local until explicit confirmation. CAD is a suggestion, never an
-// implicit saved preference. Settings deliberately does not render this form.
+// implicit saved preference.
 export function CurrencySelection({
   onConfirm,
   disabled

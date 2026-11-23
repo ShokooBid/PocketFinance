@@ -95,7 +95,7 @@ export function registerAccountRoutes(
         querystring: empty,
         body: accountPatch,
         description:
-          "Nonempty name/type patch on an active owned account. Currency and opening information are immutable, including before first use.",
+          "Update the name, type or opening date of an active owned account. The opening date must be on or before its earliest transaction or transfer. Currency and opening balance are immutable.",
         response: { ...errors, 200: accountSchema }
       }
     },

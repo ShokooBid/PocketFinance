@@ -5,6 +5,7 @@ import {
   currencySchema,
   currencyExponents,
   createDemoTransactionSource,
+  createDemoWriteQueue,
   type Currency
 } from "./transaction-data";
 import type { CategorySource } from "./category-data";
@@ -48,14 +49,16 @@ const detail = accountSchema.extend({
 });
 export type Account = z.infer<typeof accountSchema>;
 type AccountInput = z.infer<typeof accountInput>;
+const accountPatch = accountInput
+  .pick({ name: true, type: true, openingDate: true })
+  .partial()
+  .refine((value) => Object.values(value).some((field) => field !== undefined));
+type AccountPatch = z.infer<typeof accountPatch>;
 export interface AccountSource {
   list(): Promise<Account[]>;
   get(id: string, asOf?: string): Promise<z.infer<typeof detail>>;
   create(input: AccountInput): Promise<Account>;
-  update(
-    id: string,
-    patch: { name?: string; type?: Account["type"] }
-  ): Promise<Account>;
+  update(id: string, patch: AccountPatch): Promise<Account>;
   archive(id: string): Promise<Account>;
 }
 export function parseOpeningBalance(raw: string, currency: Currency) {
@@ -110,7 +113,8 @@ export function createApiAccountSource(client: Transport): AccountSource {
         accountSchema,
         accountInput.parse(input)
       ),
-    update: (id, patch) => client.send("PATCH", path(id), accountSchema, patch),
+    update: (id, patch) =>
+      client.send("PATCH", path(id), accountSchema, accountPatch.parse(patch)),
     archive: (id) =>
       client.send("POST", `${path(id)}/archive`, accountSchema, {})
   };
@@ -125,15 +129,8 @@ export function createDemoFinanceSources(
 ) {
   let rows: Account[] = [],
     sequence = 0;
-  let writes = Promise.resolve();
-  function write<T>(action: () => Promise<T>) {
-    const result = writes.then(action);
-    writes = result.then(
-      () => {},
-      () => {}
-    );
-    return result;
-  }
+  // Read and change the opening boundary in the same queue as posting writes.
+  const write = createDemoWriteQueue();
   const missing = () => new ClientFailure("unavailable");
   function checkedName(input: AccountInput, except?: string) {
     const name = input.name
@@ -194,21 +191,29 @@ export function createDemoFinanceSources(
       rows.push(row);
       return { ...row };
     },
-    async update(id, patch) {
+    async update(id, value) {
       const row = rows.find((row) => row.id === id);
       if (!row) throw missing();
       if (row.archivedAt)
         throw new ClientFailure("conflict", "ACCOUNT_ARCHIVED");
+      const patch = accountPatch.parse(value);
       const input = accountInput.parse({
         name: patch.name ?? row.name,
         type: patch.type ?? row.type,
         currency: row.currency,
-        openingDate: row.openingDate,
+        openingDate: patch.openingDate ?? row.openingDate,
         openingBalanceMinor: row.openingBalanceMinor
       });
+      if (
+        input.openingDate > row.openingDate &&
+        (transactions.hasPostingBefore(id, input.openingDate) ||
+          transfers.hasPostingBefore(id, input.openingDate))
+      )
+        throw new ClientFailure("conflict", "OPENING_DATE_AFTER_ACTIVITY");
       const updated = {
         ...row,
-        ...patch,
+        type: input.type,
+        openingDate: input.openingDate,
         name: checkedName(input, id),
         updatedAt: new Date().toISOString()
       };
@@ -232,7 +237,8 @@ export function createDemoFinanceSources(
       if (!previous && currency !== getCurrency())
         throw new ClientFailure("validation", "CURRENCY_MISMATCH");
       beforeWrite?.(currency, previous);
-    }
+    },
+    write
   );
   const transfers = createDemoTransferLedger(
     accounts,

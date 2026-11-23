@@ -77,7 +77,7 @@ function TransactionsScreen() {
   const account =
     accountId !== undefined ? z.uuid().safeParse(accountId) : null;
   const initialCreate = action === "add" ? parseAddLink(date, currency) : null;
-  const openDraftSettings = () =>
+  const openDraftAccounts = () =>
     router.push({
       pathname: "/settings",
       params: { returnTo: "transaction-draft" }
@@ -217,7 +217,7 @@ function TransactionsScreen() {
           !currencyState.saving &&
           hasActiveAccounts
         }
-        onCurrencySettings={openDraftSettings}
+        onCurrencySettings={openDraftAccounts}
         source={source}
         categories={categories}
         demo={session.status === "demo"}

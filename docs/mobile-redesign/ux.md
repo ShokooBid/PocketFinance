@@ -6,26 +6,25 @@ names shown in examples do not define the final default catalog.
 
 ## Navigation and layout
 
-The bottom bar has **Add**, **History** and **Overview**. Settings is reached from
-the avatar menu on every application screen.
+The bottom bar has **Add**, **History** and **Overview**. The avatar menu opens
+**Accounts** at the existing `/settings` route.
 After login/demo entry, require permanent currency selection and at least one
 active account before opening finance screens. CAD is preselected locally; only
 explicit confirmation saves it. A ready authenticated deep link may open its
 requested detail, but signing in never executes a linked write. Add becomes the
 home in #72; the dashboard is now Overview behind the same setup gate.
 
-| Destination             | Responsibility                                                                        |
-| ----------------------- | ------------------------------------------------------------------------------------- |
-| Add `/`                 | Income/expense/transfer draft; primary recording experience.                          |
-| History `/transactions` | Logical records and account/date/category filters.                                    |
-| Overview `/overview`    | Income/Expenses reports, date filtering and category expansion.                       |
-| Settings `/settings`    | Currency, account management, category management, existing privacy/session controls. |
+| Destination             | Responsibility                                                            |
+| ----------------------- | ------------------------------------------------------------------------- |
+| Add `/`                 | Income/expense/transfer draft; primary recording experience.              |
+| History `/transactions` | Logical records and account/date/category filters.                        |
+| Overview `/overview`    | Income/Expenses reports, date filtering and category expansion.           |
+| Accounts `/settings`    | List, add, edit and archive accounts, view details, and select a default. |
 
-Keep `/transactions/[id]`, `/categories`, `/import`, `/privacy` and `/settings`
-reachable. Add account/transfer detail routes under their respective resources.
-Picker Back returns to its invoking draft. Direct-open details without a stack
-return to History or Settings as appropriate. Invalid IDs/query parameters show
-a recoverable invalid-link state.
+Supporting routes include `/transactions/[id]`, `/transfers/[id]`, `/categories`,
+and `/import`. Account details expand in the list. Picker Back returns to its
+invoking draft. Direct-open transaction and transfer details without a stack
+return to History. Invalid IDs or query parameters show a recoverable invalid-link state.
 
 The reference supplies the pink/violet header, white surfaces, rounded rows and
 clear amount hierarchy. Use the existing theme/decorative components where
@@ -71,8 +70,8 @@ affordance is needed for accessibility/layout, route it to the same submit lock
 and request identity. Invalid fields retain the draft and receive focus/feedback.
 
 If no active account exists, hide finance/transaction screens behind account
-setup. Keep Settings, privacy and sign-out available. Reuse the Settings account
-form and restore the existing draft unchanged after repair. Hidden drafts remain
+setup. Accounts and sign-out stay available. Setup uses the Accounts creation
+form and restores the existing draft after repair. Hidden drafts remain
 mounted but inaccessible; loading/read failures are retry states, not evidence
 that the user has no accounts.
 Changing between Income and Expense keeps amount, account, date and note. It
@@ -111,12 +110,12 @@ links; archived categories are unavailable for new assignments. Existing archive
 associations remain readable. #96 shares the approved #67 catalog; defaults do not come from
 example labels in the reference image.
 
-## Settings and named accounts
+## Accounts and currency
 
 Currency is chosen once immediately after sign-in, before account setup or
 finance access. The selection form suggests CAD without saving it, explains
-permanence and requires explicit confirmation. Once confirmed, Settings displays
-the value without editing controls, even before the first account or posting.
+permanence and requires explicit confirmation. Confirmation fixes the currency
+before the first account or posting.
 Same-value retries succeed; uncertain responses disable further changes until a
 reload confirms the saved value. No first-posting lock, conversion or unlock flow.
 
@@ -127,17 +126,19 @@ route entry, app foreground and account mutations; hide unverified finance UI
 without tearing down an existing draft. Demo uses the same rules in memory and
 resets on exit. No default-account selection is required to complete setup.
 
-Settings -> Accounts provides list, add, details, rename, archive confirmation
-and explicit default selection. Names such as BMO Chequing, BMO Savings, CIBC and
-Cash are user-defined. No bank connection is implied and no credentials are needed.
+Accounts lists active accounts first and archived accounts below. **Add Account**
+opens the form below the list. First-time setup shows the account form directly.
+Only one Add, Edit or Archive panel can be active. The list offers
+explicit default selection. Names such as BMO Chequing, BMO Savings, CIBC and Cash
+are user-defined. No bank connection is implied and no credentials are needed.
 
 Account cards use compact eye, pencil, star and archive icons with 48-point touch
 targets and accessible action names. Hover/focus shows a tooltip; long press on
 mobile shows the label without performing the action. The default account has a
 filled purple star. Details start collapsed, including after account creation,
 and the eye toggles them inside the card. Hiding works during a pending balance
-read and late responses leave details hidden. Archive still requires explicit
-confirmation. Archived cards retain their eye/history action; incompatible
+read and late responses leave details hidden. Archive opens a confirmation modal
+using the transaction-delete dialog layout. Archived cards retain their eye/history action; incompatible
 currencies cannot become the default. Actions wrap below the account identity
 on narrow screens.
 
@@ -147,24 +148,30 @@ tiles inside 48-point touch targets. Reserve space for the account information;
 long names truncate, while metadata may wrap. When the measured card width or
 system font size requires more room, place the actions below the identity.
 
-Keep account setup minimal: the Add account heading and opening balance field
-have help tooltips for their explanations, including the permanent currency.
+The Add account heading and opening balance field have help tooltips, including
+the permanent currency and how to enter the balance.
 Use one account-type dropdown for Cash, Bank, Credit and Other. Omit the Financial
 accounts heading, routine explanatory paragraphs and empty-list notice. Accounts
 refresh on page focus, app foreground and mutations; failed reads have a local
 Try again action rather than a permanent Reload accounts button. An uncertain
 write triggers a read and still requires review before another write.
 
-Every application screen, including currency/account setup, has a simple avatar
-beside its title. Hover, focus or tap opens Settings and Sign out (Exit demo in
-demo mode). Remove the duplicate footer links/actions. Keep the separate confirmed
-Sign out on all devices control in Settings. Signed-out authentication screens
-do not show the user menu.
+Every application screen, including currency and account setup, has a simple
+avatar beside its title. Hover, focus or tap opens Accounts and Sign out (Exit
+demo in demo mode). The primary Accounts screen uses the navigation bar and
+system Back. Opening Accounts from a draft that needs an account offers
+**Return to transaction draft**. Sign out and Exit demo discard the draft without
+a confirmation. The discard prompt is used when Android Back would exit from
+Add or when a transfer action would replace or discard a dirty draft.
 
-Account creation has no independent currency selector. Opening balance is optional and defaults to zero. Show the associated
-opening date so the balance's accounting boundary is clear. Account details show
-currency, tracked balance, opening information and archival state. A default
-account must be owned, active and compatible; archival invalidates its selection.
+Account creation inherits the permanent currency. Opening balance defaults to
+zero and is fixed after creation. The opening-date calendar has a help tooltip
+explaining the transaction cutoff and how to enter older cash activity. Active
+accounts can edit the date up to and including their earliest transaction or
+transfer. With no activity, any valid opening date is allowed. Account details
+show currency, tracked balance, opening date and balance, and the archive date
+when applicable. A default account must be owned, active and compatible.
+Archiving the default clears the selection.
 
 ## Transfer entry
 
@@ -200,7 +207,7 @@ transfer.
 Ordinary rows use category icons and optional note/category/date fallback text;
 transfers use a dedicated icon and From -> To labels. Account statements label
 incoming/outgoing transfers and their balance sign.
-Settings account details link to History with that account selected, including
+Authenticated Accounts details link to History with that account selected, including
 archived accounts. Existing readiness still requires at least one active account.
 
 Older/newer cursor pages merge into one section per date. Failed reads preserve
@@ -239,15 +246,15 @@ labels use current names rather than immutable historical snapshots. See the
 
 ## States and recovery
 
-| State                            | Entry / transfer                                                                                                              | Pickers / Settings                                                             | History / Overview / later statement review                                                                   |
+| State                            | Entry / transfer                                                                                                              | Pickers / Accounts                                                             | History / Overview / later statement review                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| Loading                          | Resolve verified session, Settings and choices before making Save available; no transient USD draft.                          | Show progress without pretending an empty list is final.                       | Show a loading state; do not replace financial totals with fabricated zeros.                                  |
-| Empty                            | Offer Settings account creation and preserve the draft.                                                                       | Search no-match differs from no categories/accounts; allow permitted creation. | Explain no records/rows; a confirmed empty period has real zero totals.                                       |
+| Loading                          | Resolve the verified session, saved currency and choices before making Save available.                                        | Show progress without pretending an empty list is final.                       | Show a loading state; do not replace financial totals with fabricated zeros.                                  |
+| Empty                            | Open Accounts to create an account and preserve the draft.                                                                    | Search no-match differs from no categories/accounts; allow permitted creation. | Explain no records/rows; a confirmed empty period has real zero totals.                                       |
 | Invalid                          | Field-specific feedback; preserve amount/date/note and focus the first problem.                                               | Explain duplicate/read-only/default/archived failures; retain input.           | Reject bad filters/links; a statement with blocking row issues cannot confirm.                                |
 | Saving                           | Lock concurrent submit/mode-changing writes and keep the same request identity.                                               | Disable repeated mutation while pending.                                       | Do not optimistically change posted totals or import counts.                                                  |
 | Uncertain write                  | Keep the draft/key; check the existing operation before allowing another create. A timeout is not evidence of failure.        | Reload/reconcile before a blind mutation retry.                                | Preserve selection/review; confirmation retry uses the same idempotency identity.                             |
 | Success                          | Announce success, refresh dependent views and prepare another entry; clear amount/note, preserve appropriate user selections. | Return the created/selected ID; refresh lists/defaults.                        | Show only server-confirmed records, counts and totals.                                                        |
-| Cancellation                     | Back from pickers keeps entered values. Signing out with a dirty draft requires confirmation.                                 | Cancel creates/archives nothing.                                               | Cancelling a statement review posts nothing.                                                                  |
+| Cancellation                     | Back from pickers and tab changes keep the draft. Sign out and Exit demo discard it directly.                                 | Cancel creates/archives nothing.                                               | Cancelling a statement review posts nothing.                                                                  |
 | Session expired / account switch | Hide protected data and clear session-owned drafts, selections and keys on logout/account switch.                             | Cancel stale callbacks; no prior-user choices remain visible.                  | Restore verified access or sign in; no duplicate replay after renewal.                                        |
 | Read/network error               | Keep entered values and explain retry/recovery.                                                                               | Retry loading without enabling writes against missing/stale required data.     | Preserve filters and loaded context; mark failed refresh instead of showing stale totals as freshly verified. |
 

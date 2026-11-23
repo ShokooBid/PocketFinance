@@ -632,7 +632,7 @@ export function EntryAccountDropdown({
         <StateNotice
           kind="empty"
           title="No compatible accounts"
-          message={`Create an active ${currency} account in Settings, then return to your draft.`}
+          message={`Create an active ${currency} account in Accounts, then return to your draft.`}
         />
       )}
       {state.available.length > 0 && !state.matches.length && (

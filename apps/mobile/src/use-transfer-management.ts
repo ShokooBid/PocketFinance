@@ -23,7 +23,7 @@ export type TransferManagementProps = {
 };
 
 // Listing/detail reads and delete recovery live here. Editing uses the shared
-// session entry draft, so opening Settings never loses transfer form values.
+// session entry draft, which keeps transfer form values across navigation.
 export function useTransferManagement({
   source,
   accounts,

@@ -514,15 +514,16 @@ describe("session entry coordination", () => {
     );
     expect(entry.result.current.saved).toMatchObject({ kind: "transaction" });
   });
-  it("requires explicit confirmation before discarding or signing out", async () => {
+  it("keeps a dirty draft when the user cancels a discard request", async () => {
     const entry = await openEntry();
     await fillEntry(entry);
-    const logout = jest.fn();
-    act(() => entry.result.current.requestDiscard(logout));
-    expect(logout).not.toHaveBeenCalled();
+    const leave = jest.fn();
+    act(() => entry.result.current.requestDiscard(leave));
+    expect(leave).not.toHaveBeenCalled();
     expect(entry.result.current.leaving).not.toBeNull();
     act(() => entry.result.current.setLeaving(null));
     expect(entry.result.current.draft.amount).toBe("12.34");
+    expect(leave).not.toHaveBeenCalled();
   });
   it("keeps a manually chosen date across midnight and clears all draft state on a new session", async () => {
     jest.useFakeTimers({ now: new Date(2026, 10, 9, 23, 59, 50) });

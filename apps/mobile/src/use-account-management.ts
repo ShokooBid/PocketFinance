@@ -7,6 +7,7 @@ import {
   type Account,
   type AccountSource
 } from "./account-data";
+import { localDate } from "./entry-data";
 import { uncertainWrite, type Currency } from "./transaction-data";
 
 export type AccountManagementProps = {
@@ -20,6 +21,9 @@ export type AccountManagementProps = {
   changes?: { subscribe(listener: () => void): () => void };
 };
 
+type AccountPanel =
+  { kind: "create" } | { kind: "edit" | "archive"; account: Account } | null;
+
 function actionMessage(failure: unknown) {
   if (failure instanceof ClientFailure) {
     if (failure.code === "ACCOUNT_NAME_CONFLICT")
@@ -28,6 +32,8 @@ function actionMessage(failure: unknown) {
       return "This account must use your permanent currency. Review the currency before creating it.";
     if (failure.code === "ACCOUNT_ARCHIVED")
       return "This account was archived. Its history is preserved.";
+    if (failure.code === "OPENING_DATE_AFTER_ACTIVITY")
+      return "Choose an opening date on or before this account's earliest transaction or transfer.";
     if (failure.kind === "unavailable")
       return "This account is unavailable. Review your accounts before continuing.";
     if (failure.code === "INVALID_ACCOUNT")
@@ -36,24 +42,29 @@ function actionMessage(failure: unknown) {
   return "The account action could not be confirmed. Review your accounts before another change.";
 }
 
-// Settings owns presentation; this hook owns validation, read recovery and writes.
-export function useAccountManagement({
-  source,
-  currency,
-  defaultAccountId,
-  onDefault,
-  onReloadPreferences,
-  preferencesReady = true,
-  active = true,
-  changes
-}: AccountManagementProps) {
+export function useAccountManagement(
+  {
+    source,
+    currency,
+    defaultAccountId,
+    onDefault,
+    onReloadPreferences,
+    preferencesReady = true,
+    active = true,
+    changes
+  }: AccountManagementProps,
+  createInline: boolean
+) {
   const [rows, setRows] = useState<Account[]>([]);
   const [name, setName] = useState("");
   const [type, setType] = useState<Account["type"]>("bank");
   const [opening, setOpening] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [editing, setEditing] = useState<Account | null>(null);
-  const [archiving, setArchiving] = useState<Account | null>(null);
+  const initialPanel: AccountPanel = createInline ? { kind: "create" } : null;
+  const [panel, setPanel] = useState<AccountPanel>(initialPanel);
+  const [date, setDate] = useState(localDate);
+  const creating = panel?.kind === "create";
+  const editing = panel?.kind === "edit" ? panel.account : null;
+  const archiving = panel?.kind === "archive" ? panel.account : null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Awaited<
     ReturnType<AccountSource["get"]>
@@ -177,11 +188,23 @@ export function useAccountManagement({
     } else if (!lock.current) void viewDetails(row);
   }
 
+  function resetForm() {
+    setName("");
+    setType("bank");
+    setOpening("");
+    setDate(localDate());
+  }
+
+  function resetPanel() {
+    resetForm();
+    setPanel(initialPanel);
+  }
+
   async function action(
-    operation: "save" | "archive" | "default",
-    row?: Account
+    ...[operation, row]: ["save"] | ["archive"] | ["default", Account]
   ) {
     if (lock.current || uncertain || !ready || !preferencesReady) return;
+    if (operation === "save" && !creating && !editing) return;
     let input;
     try {
       if (operation === "save")
@@ -189,14 +212,13 @@ export function useAccountManagement({
           name,
           type,
           currency: editing?.currency ?? currency,
-          openingDate: editing?.openingDate ?? date,
+          openingDate: date,
           openingBalanceMinor:
             editing?.openingBalanceMinor ??
             parseOpeningBalance(opening, currency)
         });
       if (
         operation === "default" &&
-        row &&
         (!rows.some((owned) => owned.id === row.id) ||
           row.archivedAt ||
           row.currency !== currency)
@@ -204,9 +226,11 @@ export function useAccountManagement({
         throw new ClientFailure("validation", "INVALID_ACCOUNT");
     } catch (failure) {
       setError(
-        operation === "save"
-          ? "Check the account name, signed opening amount and calendar date."
-          : actionMessage(failure)
+        operation !== "save"
+          ? actionMessage(failure)
+          : editing
+            ? "Check the account name and opening date."
+            : "Check the account name, signed opening amount and calendar date."
       );
       return;
     }
@@ -220,40 +244,29 @@ export function useAccountManagement({
         if (editing)
           await source.update(editing.id, {
             name: input!.name,
-            type: input!.type
+            type: input!.type,
+            ...(input!.openingDate !== editing.openingDate
+              ? { openingDate: input!.openingDate }
+              : {})
           });
         else await source.create(input!);
         if (!mounted.current) return;
-        setName("");
-        setOpening("");
-        setEditing(null);
-        setType("bank");
+        resetPanel();
         setNotice(
           editing
             ? "Account changes saved."
             : "Account created. Choose it explicitly as your default or select it in your transaction draft."
         );
       } else if (operation === "archive") {
-        await source.archive(row!.id);
+        if (!archiving) return;
+        await source.archive(archiving.id);
         if (!mounted.current) return;
-        setArchiving(null);
-        if (editing?.id === row!.id) {
-          setEditing(null);
-          setName("");
-        }
+        resetPanel();
         // The API clears its default atomically; keep the demo/provider in sync too.
-        if (defaultAccountId === row!.id) await onDefault(null);
-        setNotice(
-          "Account archived. History is preserved; future entries cannot select it."
-        );
+        if (defaultAccountId === archiving.id) await onDefault(null);
       } else {
-        await onDefault(row?.id ?? null);
-        if (mounted.current)
-          setNotice(
-            row
-              ? `${row.name} is the default account.`
-              : "Default account cleared."
-          );
+        await onDefault(row.id);
+        if (mounted.current) setNotice(`${row.name} is the default account.`);
       }
       confirmed = true;
       await refresh();
@@ -282,6 +295,7 @@ export function useAccountManagement({
   const disabled = busy || uncertain || !ready || !preferencesReady;
   return {
     rows,
+    creating,
     name,
     setName,
     type,
@@ -292,7 +306,6 @@ export function useAccountManagement({
     setDate,
     editing,
     archiving,
-    setArchiving,
     selectedId,
     detail,
     detailError,
@@ -307,17 +320,26 @@ export function useAccountManagement({
     viewDetails,
     toggleDetails,
     action,
-    edit(row: Account) {
-      setEditing(row);
-      setName(row.name);
-      setType(row.type);
+    startCreating() {
+      resetForm();
+      setPanel({ kind: "create" });
       setError(null);
     },
-    cancelEditing() {
-      setEditing(null);
-      setName("");
-      setType("bank");
+    edit(row: Account) {
+      setPanel({ kind: "edit", account: row });
+      setName(row.name);
+      setType(row.type);
+      setDate(row.openingDate);
       setError(null);
+    },
+    startArchiving(row: Account) {
+      setPanel({ kind: "archive", account: row });
+      setError(null);
+    },
+    closePanel() {
+      if (lock.current) return;
+      resetPanel();
+      if (!uncertain && ready) setError(null);
     },
     acknowledgeReview() {
       setUncertain(false);
