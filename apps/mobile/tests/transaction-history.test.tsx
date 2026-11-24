@@ -1,12 +1,6 @@
 import { accounts, accountId, requestId } from "./auth-fixtures";
 import { describe, expect, it, jest } from "@jest/globals";
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor
-} from "@testing-library/react-native";
+import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { TransactionManagement } from "../src/transaction-management";
 import {
   appendTransactionPage,
@@ -86,11 +80,7 @@ async function open(
       {...(detailId ? { detailId } : {})}
     />
   );
-  await waitFor(() =>
-    expect(
-      screen.getByRole("button", { name: "Reload transactions and categories" })
-    ).toBeEnabled()
-  );
+  await act(async () => {});
   return { onAdd, onEdit };
 }
 const names = () =>
@@ -143,7 +133,7 @@ describe("history page rules", () => {
   });
 });
 describe("transaction history and details", () => {
-  it("applies combined filters, keeps them on edits, and clears them in one action", async () => {
+  it("applies combined filters, keeps them on edits, and clears them individually", async () => {
     const { source, categories } = await fixture();
     const list = jest.fn(source.list);
     await open({ ...source, list }, categories);
@@ -173,7 +163,16 @@ describe("transaction history and details", () => {
         name: "Date range: 2026-10-01 – 2026-10-01"
       })
     ).toBeVisible();
-    await press("Clear filters");
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: "Reload transactions and categories"
+      })
+    ).toBeNull();
+    await press("Filter: all directions");
+    await press("Filter: all categories");
+    await press("Date range: 2026-10-01 – 2026-10-01");
+    await press("Clear");
     expect(names()).toEqual([
       "Edit Synthetic 2",
       "Edit Synthetic 3",
@@ -244,7 +243,7 @@ describe("transaction history and details", () => {
           })
       );
     await open({ ...source, list }, categories);
-    await press("Reload transactions and categories");
+    await press("Apply filters");
     await act(async () => source.remove(stale.items[0]!.id));
     await act(async () => resolve(stale));
     expect(names()).toEqual([]);

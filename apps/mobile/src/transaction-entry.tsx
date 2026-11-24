@@ -110,18 +110,12 @@ export function TransactionEntry() {
             closeAccountDropdown();
             return true;
           }
-          // Moving among tabs keeps the draft. Only exiting the root loses it.
-          if (
-            router.canGoBack() ||
-            (!entry.dirty && !entry.busy && !entry.uncertain)
-          )
-            return false;
-          entry.requestDiscard(() => BackHandler.exitApp());
-          return true;
+          // Let Back navigate normally and keep an active write running at the root.
+          return entry.busy && !router.canGoBack();
         }
       );
       return () => subscription.remove();
-    }, [accountPicker, closeAccountDropdown, entry, router])
+    }, [accountPicker, closeAccountDropdown, entry.busy, router])
   );
   useFocusEffect(
     useCallback(() => {
@@ -500,9 +494,7 @@ export function TransactionEntry() {
                   : "Account options"
             }
             {...(excludedAccountId ? { excludeId: excludedAccountId } : {})}
-            {...(choosingDestination
-              ? { onClear: () => entry.change({ toAccountId: "" }) }
-              : {})}
+            alignEnd={choosingDestination}
             onClose={closeAccountDropdown}
             onSelect={(id, rows) =>
               entry.selectAccount(id, rows, choosingDestination ? "to" : "from")

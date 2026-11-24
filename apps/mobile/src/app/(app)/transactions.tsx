@@ -96,7 +96,7 @@ function TransactionsScreen() {
     return <Redirect href={{ pathname: "/", params: initialCreate }} />;
   if (history)
     return (
-      <Screen title="History">
+      <Screen title="History" appearance="history">
         {(focus && !focus.success) || (account && !account.success) ? (
           <>
             <StateNotice
@@ -189,11 +189,19 @@ function TransactionsScreen() {
                           router.navigate("/")
                         );
                     }
-                  } catch {
-                    if (request === selection.current)
+                  } catch (failure) {
+                    if (request !== selection.current) return;
+                    if (
+                      failure instanceof ClientFailure &&
+                      failure.kind === "unavailable"
+                    ) {
+                      changes.invalidate();
+                      setSelectionError("This record is no longer available.");
+                    } else {
                       setSelectionError(
-                        "The record could not be loaded. Refresh History and try again."
+                        "The record could not be loaded. Select it again to retry."
                       );
+                    }
                   } finally {
                     if (request === selection.current) setSelectionBusy(false);
                   }
@@ -205,7 +213,7 @@ function TransactionsScreen() {
       </Screen>
     );
   return (
-    <Screen title="History">
+    <Screen title="History" appearance="history">
       <TransactionManagement
         onAdd={() => router.navigate("/")}
         defaultCurrency={defaultCurrency}

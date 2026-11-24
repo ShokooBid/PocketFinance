@@ -139,7 +139,10 @@ describe("session navigation", () => {
     await openShell();
     await enterDemo();
     await tap(screen.getByRole("link", { name: "Add" }));
-    await screen.findByRole("header", { name: "New transaction screen" });
+    expect(
+      await screen.findByRole("header", { name: "New transaction screen" })
+    ).toHaveTextContent("New transaction");
+    expect(screen.getByText("Pocket Finance")).toBeVisible();
     await press("Digit 1");
     await press("Decimal point");
     await press("Digit 2");
@@ -147,7 +150,13 @@ describe("session navigation", () => {
     expect(screen.queryByRole("link", { name: "Accounts" })).toBeNull();
     for (const name of ["History", "Overview", "Accounts"] as const) {
       if (name === "Accounts") await openAccounts();
-      else await tap(screen.getByRole("link", { name }));
+      else {
+        await tap(screen.getByRole("link", { name }));
+        expect(
+          screen.getByRole("header", { name: `${name} screen` })
+        ).toHaveTextContent(name);
+        expect(screen.getByText("Pocket Finance")).toBeVisible();
+      }
       await tap(screen.getByRole("link", { name: "Add" }));
       expect(await screen.findByLabelText("Amount")).toHaveProp("value", "1.2");
       expect(screen.getByLabelText("Note (optional)")).toHaveProp(
@@ -183,7 +192,12 @@ describe("session navigation", () => {
     await chooseAccountOpeningDate("2024-01-01");
     await press("Create account");
     await navigate(() => router.back());
-    await chooseAccount("Demo setup cash");
+    expect(
+      await screen.findByRole("button", {
+        name: "Account: Demo setup cash",
+        selected: true
+      })
+    ).toBeVisible();
     await chooseCategory("Food & Drinks");
     await press("Digit 7");
     await press("Decimal point");
@@ -225,7 +239,7 @@ describe("session navigation", () => {
       "value",
       "Keypad purchase"
     );
-    await field("Amount", "8.50");
+    await field("Amount", "8.00");
     await press("Update transaction");
     expect(
       await screen.findByRole("header", { name: "History screen" })
@@ -245,7 +259,7 @@ describe("session navigation", () => {
       await screen.findByRole("header", { name: "History screen" })
     ).toBeVisible();
     await press("Edit Keypad purchase");
-    expect(screen.getByLabelText("Amount")).toHaveProp("value", "8.50");
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "8");
     expect(
       screen.getByRole("button", { name: "Account: Spending", selected: true })
     ).toBeVisible();
@@ -298,14 +312,16 @@ describe("session navigation", () => {
       })
     ).toBeVisible();
 
-    await press("Choose account");
+    await press("Account: Demo setup cash");
     expect(
-      screen.getByRole("button", { name: "Choose account", expanded: true })
+      screen.getByRole("button", {
+        name: "Account: Demo setup cash",
+        expanded: true
+      })
     ).toBeVisible();
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
-    await press("Choose account");
+    await press("Account: Demo setup cash");
     expect(screen.queryByLabelText("Account options")).toBeNull();
-    await chooseAccount("Demo setup cash");
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
     expect(screen.getByLabelText("Note (optional)")).toHaveProp(
       "value",
@@ -336,12 +352,12 @@ describe("session navigation", () => {
     await chooseTransactionDate("2026-11-01");
     await field("Note (optional)", "Keep this draft");
     await chooseCategory("Onboarding food");
-    await press("Choose account");
+    await press("Account: Demo setup cash");
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
     expect(
       screen.queryByRole("button", { name: "Open Accounts to add an account" })
     ).toBeNull();
-    await press("Choose account");
+    await press("Account: Demo setup cash");
     await openAccounts();
     expect(
       await screen.findByRole("header", { name: "Accounts screen" })
@@ -367,7 +383,7 @@ describe("session navigation", () => {
     await navigate(() => router.back());
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "Choose account" })
+        screen.getByRole("button", { name: "Account: Demo setup cash" })
       ).toBeEnabled()
     );
     expect(screen.getByLabelText("Amount")).toHaveProp("value", "12.34");
@@ -386,8 +402,8 @@ describe("session navigation", () => {
     ).toBeVisible();
     expect(
       screen.getByRole("button", {
-        name: "Choose account",
-        selected: false
+        name: "Account: Demo setup cash",
+        selected: true
       })
     ).toBeVisible();
     await chooseAccount("BMO Chequing");
@@ -1122,11 +1138,11 @@ describe("transfer navigation", () => {
     ).toBeDisabled();
     await field("Amount", "25");
     await field("Note (optional)", "Cash move");
-    await press("Choose From Account");
+    await press("From Account: Demo setup cash");
     expect(
       screen.queryByRole("button", { name: "Open Accounts to add an account" })
     ).toBeNull();
-    await press("Demo setup cash · CAD");
+    await press("From Account: Demo setup cash");
     await press("Choose To Account");
     expect(
       screen.queryByRole("button", { name: "Demo setup cash · CAD" })
@@ -1138,6 +1154,10 @@ describe("transfer navigation", () => {
     await press("Open Accounts to add an account");
     await press("Add Account");
     await field("Account name", "Savings");
+    await chooseAccountOpeningDate("2024-01-01");
+    await press("Create account");
+    await press("Add Account");
+    await field("Account name", "Travel");
     await chooseAccountOpeningDate("2024-01-01");
     await press("Create account");
     await press("Return to transaction draft");
@@ -1169,6 +1189,7 @@ describe("transfer navigation", () => {
     expect(
       await screen.findByRole("header", { name: "Edit transfer screen" })
     ).toBeVisible();
+    expect(screen.getByLabelText("Amount")).toHaveProp("value", "25");
     await press("From Account: Demo setup cash");
     expect(
       await screen.findByRole("button", {
@@ -1187,15 +1208,17 @@ describe("transfer navigation", () => {
     expect(
       screen.queryByRole("button", { name: "Demo setup cash · CAD" })
     ).toBeNull();
-    await press("Clear account selection");
-    await press("Choose To Account");
-    await press("Savings · CAD");
+    expect(
+      screen.queryByRole("button", { name: "Clear account selection" })
+    ).toBeNull();
+    await press("Travel · CAD");
     expect(screen.getByLabelText("Note (optional)")).toHaveProp(
       "value",
       "Cash move"
     );
     await field("Amount", "30");
     await press("Review transfer");
+    expect(screen.getByText("To Account: Travel")).toBeVisible();
     await press("Confirm transfer changes");
     await screen.findByRole("header", { name: "History screen" });
     await press("View transfer: Cash move");

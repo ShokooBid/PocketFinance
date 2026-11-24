@@ -559,7 +559,7 @@ export function EntryAccountDropdown({
   excludeId,
   label,
   onSelect,
-  onClear,
+  alignEnd = false,
   onClose
 }: {
   source: Pick<AccountSource, "list">;
@@ -568,7 +568,7 @@ export function EntryAccountDropdown({
   excludeId?: string;
   label: string;
   onSelect: (id: string, rows: Account[]) => void;
-  onClear?: () => void;
+  alignEnd?: boolean;
   onClose: () => void;
 }) {
   const state = useAccountPicker(
@@ -586,23 +586,14 @@ export function EntryAccountDropdown({
     leading: <AccountIcon name={row.type} active />,
     emphasized: true
   }));
-  if (onClear && selectedId)
-    options.push({ value: "", label: "Clear account selection" });
-
   return (
     <Dropdown
       label={label}
       options={options}
       selected={selectedId}
       disabled={state.busy}
-      style={onClear && styles.dropdownEnd}
-      onSelect={(id) => {
-        if (id) void state.select(id);
-        else if (onClear) {
-          onClear();
-          onClose();
-        }
-      }}
+      style={alignEnd && styles.dropdownEnd}
+      onSelect={(id) => void state.select(id)}
       onClose={onClose}
     >
       {(state.available.length > 6 || state.query !== "") && (

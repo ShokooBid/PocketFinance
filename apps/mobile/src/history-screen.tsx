@@ -206,22 +206,6 @@ export function HistoryScreen(
             is applied.
           </Body>
         )}
-        <View style={styles.actions}>
-          <HistoryPill
-            label="Clear filters"
-            text="Clear"
-            disabled={disabled}
-            onPress={state.clear}
-            style={styles.textAction}
-          />
-          <HistoryPill
-            label="Refresh history"
-            text="Refresh"
-            disabled={disabled}
-            onPress={state.refresh}
-            style={styles.textAction}
-          />
-        </View>
         {page?.adjustments.length ? (
           <Text accessibilityLiveRegion="polite" style={styles.notice}>
             {page.adjustments.join(" ")}
@@ -242,11 +226,8 @@ export function HistoryScreen(
             {...(!busy ? { onRetry: state.refresh } : {})}
           />
         )}
-        {state.stale && page && (
-          <Body>
-            Previously loaded history may be out of date. Refresh before
-            continuing pagination.
-          </Body>
+        {state.stale && page && !busy && (
+          <Body>Previously loaded history may be out of date.</Body>
         )}
         {page?.previousCursor && (
           <Button
@@ -297,15 +278,13 @@ export function HistoryScreen(
               ))}
           </View>
         ))}
-        {page?.nextCursor ? (
+        {page?.nextCursor && (
           <Button
             label="Load older transactions"
             disabled={disabled || state.stale}
             onPress={() => state.more("older")}
           />
-        ) : page?.items.length && !busy ? (
-          <Body>End of matching history.</Body>
-        ) : null}
+        )}
       </View>
       {picker === "category" && (
         <CategoryPicker
@@ -521,7 +500,6 @@ const styles = StyleSheet.create({
   filterBar: { flexDirection: "row", gap: 6 },
   filterBarWrap: { flexWrap: "wrap" },
   typeDropdown: { maxWidth: 200, alignSelf: "center" },
-  actions: { flexDirection: "row", justifyContent: "flex-end", gap: 14 },
   pill: {
     minHeight: 42,
     borderRadius: theme.pillRadius,
@@ -536,12 +514,6 @@ const styles = StyleSheet.create({
   filterChip: { flex: 1, minWidth: 0, paddingHorizontal: 6 },
   filterChipWide: { minWidth: 130 },
   scopeChip: { alignSelf: "flex-start" },
-  textAction: {
-    minHeight: 34,
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    paddingHorizontal: 4
-  },
   group: {
     borderRadius: 17,
     borderWidth: 1,

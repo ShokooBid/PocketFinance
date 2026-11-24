@@ -39,7 +39,7 @@ Expense / Income / Transfer is a compact segmented choice. Income/expense use:
 | Control                  | Requirement and behavior                                                                                                                                                       |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Amount                   | Positive exact minor units. Parse/display using the selected account currency, inherited from the permanent choice. Custom numeric keypad; no currency selector or arithmetic. |
-| Account                  | Required active named account in the configured currency. A user-selected default may prefill it; otherwise select explicitly.                                                 |
+| Account                  | Required active account in the configured currency. Prefill the default or the first eligible account in picker order. The user can change it.                                 |
 | Category                 | Required root or child. Open the searchable picker rather than display every option inline.                                                                                    |
 | Date                     | Required calendar date, defaulting to local today. Use a date picker; there is no time field.                                                                                  |
 | Description / note       | One optional free-text field; API name `note`, maximum 2000 UTF-16 units, empty input becomes null.                                                                            |
@@ -160,9 +160,8 @@ Every application screen, including currency and account setup, has a simple
 avatar beside its title. Hover, focus or tap opens Accounts and Sign out (Exit
 demo in demo mode). The primary Accounts screen uses the navigation bar and
 system Back. Opening Accounts from a draft that needs an account offers
-**Return to transaction draft**. Sign out and Exit demo discard the draft without
-a confirmation. The discard prompt is used when Android Back would exit from
-Add or when a transfer action would replace or discard a dirty draft.
+**Return to transaction draft**. Moving between tabs keeps the current draft.
+Sign out and Exit demo clear the session draft.
 
 Account creation inherits the permanent currency. Opening balance defaults to
 zero and is fixed after creation. The opening-date calendar has a help tooltip
@@ -176,7 +175,8 @@ Archiving the default clears the selection.
 ## Transfer entry
 
 Transfer mode replaces the normal category/account selection with **From account**
-and **To account**. Require different active owned accounts in the same configured
+and **To account**. Users can change the destination by selecting another account.
+Require different active owned accounts in the same configured
 currency, a positive amount, calendar date and optional note. No category,
 merchant or foreign-exchange control is shown.
 
@@ -193,14 +193,14 @@ showing the applied range or All dates. It opens one shared calendar with compac
 Clear and Apply buttons inside the calendar surface. There are no separate From/To
 controls, month-navigation toolbar, or external Apply button. History rows place
 the category icon and account/category detail on the left and the signed amount
-on the right. Clear filters and Refresh remain secondary actions.
+on the right.
 
 History initializes to the current month and supports inclusive calendar ranges.
 Account, type (income/expense/transfer) and exact/subtree category filters combine
 with AND. Calendar edits remain a draft; Apply commits the range or a single day.
-Calendar Clear removes only the date filter and closes the picker; dismissing it
-discards edits. History's separate Clear filters action removes every filter and
-starts a new pagination chain. A category filter excludes transfers.
+Calendar Clear removes only the date filter and closes the picker. Dismissing it
+discards edits. Clear other filters through their individual pickers. A category
+filter excludes transfers.
 
 Group compact rows under date-only headings, newest first. Show one row per
 transfer.
@@ -216,11 +216,11 @@ changes invalidate cursors; returning to History reloads current records.
 After a confirmed create or update, entry opens History with the saved resource ID.
 The History focus request reveals and highlights an owned record through bounded
 reads, explains only necessary filter adjustments, and keeps newer/older paging.
-Selecting a History row loads its current values into the shared entry editor.
-The Edit action on a transaction detail screen opens the same editor.
-The bottom destination reads Edit until successful update or confirmed cancellation;
-then it reads Add again. A failed or uncertain write keeps the draft and retry
-identity in the editor. Demo data remains isolated in memory.
+Choosing Edit for a History row loads its saved values into the shared editor
+and replaces the previous edit immediately. The Edit action on a detail screen
+opens the same editor. Saving or canceling returns to History and restores the
+Add draft. A failed or uncertain write keeps the draft and retry identity in the
+editor. Demo data remains isolated in memory.
 
 Overview opens Reports by default. Charts is disabled and visibly marked
 Unavailable, with an accessible explanation. Each Overview visit initializes and

@@ -41,11 +41,17 @@ export function TransferManagement(props: TransferManagementProps) {
       {props.writeBlocked && (
         <Body>Resolve the pending save in Add before changing a transfer.</Body>
       )}
-      <Button
-        label="Reload transfers"
-        disabled={state.busy || state.loading}
-        onPress={() => void state.load()}
-      />
+      {(props.detailId || state.error || state.highlightedId) && (
+        <Button
+          label={
+            props.detailId || state.error
+              ? "Reload transfers"
+              : "Show all transfers"
+          }
+          disabled={state.busy || state.loading}
+          onPress={() => void state.load()}
+        />
+      )}
       {state.ready && !state.rows.length && (
         <Body>
           {props.detailId

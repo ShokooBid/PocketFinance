@@ -34,6 +34,7 @@ import {
   uncertainWrite,
   amountText,
   transactionFailureMessage,
+  type Currency,
   type Transaction,
   type TransactionInput,
   type TransactionCreate
@@ -57,6 +58,10 @@ type TransferReview = {
   from: Account;
   to: Account;
 };
+
+function editAmountText(amountMinor: number, currency: Currency) {
+  return amountText(amountMinor, currency).replace(/\.0+$/, "");
+}
 
 function useEntryState() {
   const accountSource = useAccounts(),
@@ -95,12 +100,22 @@ function useEntryState() {
     id: string;
     kind: "transaction" | "transfer";
   } | null>(null);
+  const activeAccounts = accounts.filter(
+    (row) => !row.archivedAt && row.currency === preferences.selectedCurrency
+  );
   // Defaults are derived for Add so refreshing choices never marks the draft
   // dirty or replaces an eligible manual selection. Edit keeps its stored ID.
+  const fallbackAccountId =
+    !editingTransfer &&
+    !preferences.defaultAccountId &&
+    entryDraft.currency === preferences.selectedCurrency
+      ? (activeAccounts[0]?.id ?? "")
+      : "";
   const draft = editingTransaction
     ? entryDraft
     : {
         ...entryDraft,
+        accountId: entryDraft.accountId || fallbackAccountId,
         categoryId: defaultEntryCategory(entryDraft, categories, lastCategoryId)
       };
   const ready =
@@ -117,10 +132,6 @@ function useEntryState() {
     dateEdited: boolean;
     dirty: boolean;
   } | null>(null);
-  const [leaving, setLeaving] = useState<{ action: () => void } | null>(null);
-  const activeAccounts = accounts.filter(
-    (row) => !row.archivedAt && row.currency === preferences.selectedCurrency
-  );
   const account = accounts.find((row) => row.id === draft.accountId);
   const financeReady =
     preferences.currencyState.status === "ready" &&
@@ -237,7 +248,8 @@ function useEntryState() {
     preferences.defaultCurrency
   ]);
   useEffect(() => {
-    if (!ready || locked.current || pending.current || draft.accountId) return;
+    if (!ready || locked.current || pending.current || entryDraft.accountId)
+      return;
     const selected = activeAccounts.find(
       (row) =>
         row.id === preferences.defaultAccountId &&
@@ -251,7 +263,7 @@ function useEntryState() {
     ready,
     accounts,
     preferences.defaultAccountId,
-    draft.accountId,
+    entryDraft.accountId,
     draft.currency
   ]);
   useEffect(() => {
@@ -318,12 +330,6 @@ function useEntryState() {
           preferences.defaultAccountId ?? ""
         )
     );
-  }
-  function requestDiscard(action?: () => void) {
-    const proceed = action ?? resetDraft;
-    if (dirty || pending.current || locked.current)
-      setLeaving({ action: proceed });
-    else proceed();
   }
   async function review() {
     if (locked.current || !pending.current) return;
@@ -558,18 +564,11 @@ function useEntryState() {
     reload,
     save,
     review,
-    requestDiscard,
     cancelEditing(action: () => void) {
       if (locked.current || pending.current) return;
-      const cancel = () => {
-        resetDraft();
-        action();
-      };
-      if (editingTransaction) cancel();
-      else requestDiscard(cancel);
+      resetDraft();
+      action();
     },
-    leaving,
-    setLeaving,
     selectAccount(id: string, rows: Account[], side: "from" | "to" = "from") {
       if (locked.current || pending.current) return;
       const selected = rows.find(
@@ -592,7 +591,9 @@ function useEntryState() {
         return;
       }
       change({
-        [side === "to" ? "toAccountId" : "accountId"]: id,
+        ...(side === "to"
+          ? { accountId: draft.accountId, toAccountId: id }
+          : { accountId: id }),
         currency: selected.currency
       });
     },
@@ -609,7 +610,7 @@ function useEntryState() {
     applyLink(link: { date?: string; currency?: EntryDraft["currency"] }) {
       if (locked.current || pending.current || dirty) {
         setMessage(
-          "Your existing draft was kept. Discard it explicitly before starting from another link."
+          "Your existing draft was kept. Finish it before starting from another link."
         );
         return;
       }
@@ -626,28 +627,26 @@ function useEntryState() {
         setMessage("Resolve the current save before editing another transfer.");
         return;
       }
-      requestDiscard(() => {
-        if (!dirty) preserveAddDraft();
-        dateEdited.current = true;
-        initialized.current = true;
-        setEditingTransfer(row);
-        setEditingTransaction(null);
-        setConfirmation(null);
-        setErrors({});
-        setMessage(null);
-        setDirty(true);
-        setDraft({
-          direction: "transfer",
-          amount: amountText(row.amountMinor, row.currency),
-          currency: row.currency,
-          accountId: row.fromAccountId,
-          toAccountId: row.toAccountId,
-          categoryId: "",
-          date: row.date,
-          note: row.note ?? ""
-        });
-        action();
+      preserveAddDraft();
+      dateEdited.current = true;
+      initialized.current = true;
+      setEditingTransfer(row);
+      setEditingTransaction(null);
+      setConfirmation(null);
+      setErrors({});
+      setMessage(null);
+      setDirty(true);
+      setDraft({
+        direction: "transfer",
+        amount: editAmountText(row.amountMinor, row.currency),
+        currency: row.currency,
+        accountId: row.fromAccountId,
+        toAccountId: row.toAccountId,
+        categoryId: "",
+        date: row.date,
+        note: row.note ?? ""
       });
+      action();
     },
     editTransaction(row: Transaction, action: () => void) {
       if (locked.current || pending.current) {
@@ -667,7 +666,7 @@ function useEntryState() {
       setDirty(true);
       setDraft({
         direction: row.direction,
-        amount: amountText(row.amountMinor, row.currency),
+        amount: editAmountText(row.amountMinor, row.currency),
         currency: row.currency,
         accountId: row.accountId,
         toAccountId: "",
@@ -686,46 +685,6 @@ export function EntryProvider({ children }: PropsWithChildren) {
   return (
     <Context.Provider value={state}>
       {children}
-      <Modal
-        visible={state.leaving !== null}
-        transparent={false}
-        animationType="slide"
-        onRequestClose={() => state.setLeaving(null)}
-      >
-        <Screen
-          title={
-            state.draft.direction === "transfer"
-              ? "Discard transfer draft?"
-              : "Discard transaction draft?"
-          }
-          showUserMenu={false}
-        >
-          <Body>
-            {state.busy
-              ? "Wait for the current save or review to finish before leaving."
-              : state.uncertain
-                ? "The save may already have succeeded. Leaving loses its retry identity. Review saved history before creating another transaction. Hard deletion also removes server replay protection."
-                : `Your unsaved ${state.draft.direction === "transfer" ? "transfer" : "transaction"} will be lost. You can switch tabs or open Accounts without discarding it.`}
-          </Body>
-          <Button
-            label={
-              state.draft.direction === "transfer"
-                ? "Keep transfer draft"
-                : "Keep transaction draft"
-            }
-            onPress={() => state.setLeaving(null)}
-          />
-          <Button
-            label="Confirm discard draft"
-            disabled={state.busy}
-            onPress={() => {
-              const action = state.leaving?.action;
-              state.setLeaving(null);
-              action?.();
-            }}
-          />
-        </Screen>
-      </Modal>
       <Modal
         visible={state.confirmation !== null}
         animationType="slide"
