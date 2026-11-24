@@ -13,10 +13,12 @@ import { theme } from "./theme";
 // here; the screen/controls remain normal native accessible components.
 export function ScreenDecoration({
   prominent = false,
-  entry = false
+  entry = false,
+  entryHeight = 0
 }: {
   prominent?: boolean;
   entry?: boolean;
+  entryHeight?: number;
 }) {
   return (
     <View
@@ -26,7 +28,12 @@ export function ScreenDecoration({
       importantForAccessibility="no-hide-descendants"
       style={StyleSheet.absoluteFill}
     >
-      <Shape edge="top" prominent={prominent} entry={entry} />
+      <Shape
+        edge="top"
+        prominent={prominent}
+        entry={entry}
+        entryHeight={entryHeight}
+      />
       <Shape edge="bottom" prominent={prominent} />
     </View>
   );
@@ -34,11 +41,13 @@ export function ScreenDecoration({
 function Shape({
   edge,
   prominent,
-  entry = false
+  entry = false,
+  entryHeight = 0
 }: {
   edge: "top" | "bottom";
   prominent: boolean;
   entry?: boolean;
+  entryHeight?: number;
 }) {
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   return (
@@ -50,7 +59,7 @@ function Shape({
             ? styles.topProminent
             : styles.bottomProminent
           : styles.subtle,
-        entry && styles.entry
+        entry && [styles.entry, { height: Math.max(132, entryHeight) }]
       ]}
     >
       <Svg
@@ -107,5 +116,5 @@ const styles = StyleSheet.create({
   topProminent: { width: 280, height: 158 },
   bottomProminent: { width: 320, height: 180 },
   subtle: { opacity: 0.14 },
-  entry: { width: "100%", height: 132, opacity: 1 }
+  entry: { width: "100%", opacity: 1 }
 });

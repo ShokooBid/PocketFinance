@@ -25,7 +25,7 @@ import { useHistory, type HistoryProps } from "../src/use-history";
 import { accounts, deferred, response } from "./auth-fixtures";
 import { HistoryScreen } from "../src/history-screen";
 import type { Category, CategorySource } from "../src/category-data";
-import { currentMonth } from "../src/dashboard-data";
+import { currentMonth, monthRange } from "../src/dashboard-data";
 
 const id = (n: number) =>
   `30000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -524,34 +524,55 @@ describe("History request coordination", () => {
     );
     await waitFor(() => expect(consumed).toHaveBeenCalledTimes(1));
     hook.rerender(undefined);
-    await act(async () => hook.result.current.clear());
-    await waitFor(() => expect(hook.result.current.page?.applied).toEqual({}));
+    await act(async () =>
+      hook.result.current.updateFilters({ accountId: undefined })
+    );
+    await waitFor(() =>
+      expect(hook.result.current.page?.applied).toEqual(
+        monthRange(currentMonth())
+      )
+    );
     hook.rerender(id(10));
     await waitFor(() =>
       expect(hook.result.current.page?.applied.accountId).toBe(id(10))
     );
     expect(list.mock.calls.at(-1)?.[0]).toMatchObject({ accountId: id(10) });
   });
-  it("clears a failed saved-record selection before returning to normal History", async () => {
-    const list = jest
-      .fn<HistorySource["list"]>()
-      .mockRejectedValueOnce(new Error("unavailable"))
-      .mockResolvedValue(page([]));
-    const config = props({ list }),
-      consumed = jest.fn();
-    const hook = renderHook(() =>
-      useHistory({
-        ...config,
-        focus: { id: id(1), kind: "transaction" },
-        onFocusConsumed: consumed
-      })
-    );
-    await waitFor(() => expect(hook.result.current.error).not.toBeNull());
-    await act(async () => hook.result.current.clear());
-    await waitFor(() => expect(hook.result.current.page?.items).toEqual([]));
-    expect(consumed).toHaveBeenCalledTimes(1);
-    expect(list.mock.calls[1]).toEqual([{}, {}]);
-  });
+  it.each(["record", "account"] as const)(
+    "uses Try again to recover from an unavailable History %s link",
+    async (link) => {
+      const list = jest
+        .fn<HistorySource["list"]>()
+        .mockRejectedValueOnce(new ClientFailure("unavailable", "NOT_FOUND"))
+        .mockImplementation(async (applied) => page([], { applied }));
+      const config = props({ list }),
+        consumed = jest.fn();
+      const selection =
+        link === "record"
+          ? {
+              focus: { id: id(1), kind: "transaction" } as const,
+              onFocusConsumed: consumed
+            }
+          : { initialAccountId: id(10), onAccountConsumed: consumed };
+      render(<HistoryScreen {...config} {...historyActions} {...selection} />);
+      expect(
+        await screen.findByText(
+          "This History link is unavailable. Try again to view your history."
+        )
+      ).toBeVisible();
+      await press("Try again");
+      expect(await screen.findByText("No transactions match")).toBeVisible();
+      expect(consumed).toHaveBeenCalledTimes(1);
+      expect(list.mock.calls[1]).toEqual([
+        expect.objectContaining({
+          from: expect.any(String),
+          to: expect.any(String)
+        }),
+        {}
+      ]);
+      expect(list.mock.calls[1]?.[0]).not.toHaveProperty("accountId");
+    }
+  );
   it("moves the actions to the selected row and clears them when Edit opens", async () => {
     const transfer = row(2, {
       kind: "transfer",
@@ -738,22 +759,29 @@ describe("History request coordination", () => {
     expect(hook.result.current.page?.items[0]?.id).toBe(id(2));
   });
   it("retains loaded context after a failed page and retries the same cursor", async () => {
-    const first = page([row(4), row(3)], { nextCursor: historyKey(row(3)) });
+    const first = page([row(4, { note: "Newer entry" }), row(3)], {
+      nextCursor: historyKey(row(3))
+    });
     const list = jest
       .fn<HistorySource["list"]>()
       .mockResolvedValueOnce(first)
       .mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValueOnce(page([row(2), row(1)]));
-    const config = props({ list }),
-      hook = renderHook(() => useHistory(config));
-    await waitFor(() => expect(hook.result.current.page).toEqual(first));
-    await act(async () => hook.result.current.more("older"));
-    await waitFor(() => expect(hook.result.current.error).not.toBeNull());
-    expect(hook.result.current.page).toEqual(first);
-    await act(async () => hook.result.current.refresh());
-    await waitFor(() =>
-      expect(hook.result.current.page?.items).toHaveLength(4)
-    );
+      .mockResolvedValueOnce(page([row(2), row(1, { note: "Oldest entry" })]));
+    render(<HistoryScreen {...props({ list })} {...historyActions} />);
+    await press("Load older transactions");
+    expect(await screen.findByText("History needs attention")).toBeVisible();
+    expect(screen.getByText("Newer entry")).toBeVisible();
+    await press("Try again");
+    expect(await screen.findByText("Oldest entry")).toBeVisible();
+    expect(screen.getByText("Newer entry")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Refresh history" })
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Load older transactions" })
+    ).toBeNull();
+    expect(screen.queryByText("End of matching history.")).toBeNull();
     expect(list.mock.calls[1]?.[1]).toEqual({ after: first.nextCursor });
     expect(list.mock.calls[2]?.[1]).toEqual({ after: first.nextCursor });
   });

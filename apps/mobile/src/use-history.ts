@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AccountSource, Account } from "./account-data";
 import type { CategoryReadSource, Category } from "./category-data";
+import { ClientFailure } from "./auth/transport";
 import { currentMonth, monthRange } from "./dashboard-data";
 import {
   historyFailureMessage,
@@ -126,7 +127,30 @@ export function useHistory({
         }
       } catch (failure) {
         if (mounted.current && request === sequence.current) {
-          setError(historyFailureMessage(failure));
+          if (
+            (position.focus || pendingAccount.current) &&
+            failure instanceof ClientFailure &&
+            failure.kind === "unavailable"
+          ) {
+            const filters = { ...next };
+            if (position.focus) {
+              focusRef.current = undefined;
+              consumed.current?.();
+            }
+            if (pendingAccount.current) {
+              delete filters.accountId;
+              pendingAccount.current = undefined;
+              accountConsumed.current?.();
+            }
+            appliedRef.current = filters;
+            setFilter(filters);
+            retry.current = { filter: filters, position: {} };
+            setError(
+              "This History link is unavailable. Try again to view your history."
+            );
+          } else {
+            setError(historyFailureMessage(failure));
+          }
           setStale(true);
         }
       } finally {
@@ -229,13 +253,6 @@ export function useHistory({
               : current.focusedKey
         };
       });
-    },
-    clear: () => {
-      focusRef.current = undefined;
-      consumed.current?.();
-      pendingAccount.current = undefined;
-      accountConsumed.current?.();
-      void load({});
     },
     refresh: () => {
       const attempt = retry.current;

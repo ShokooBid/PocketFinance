@@ -94,11 +94,13 @@ export function TransactionManagement(
           message="Please wait while accounts refresh."
         />
       )}
-      <Button
-        label="Reload transactions and categories"
-        disabled={busy}
-        onPress={() => void load(uncertain ? {} : (retryFilter ?? applied))}
-      />
+      {(detailId || error || (uncertain && !reviewed)) && (
+        <Button
+          label="Reload transactions and categories"
+          disabled={busy}
+          onPress={() => void load(uncertain ? {} : (retryFilter ?? applied))}
+        />
+      )}
       {uncertain && (
         <>
           <Body>
@@ -188,11 +190,6 @@ export function TransactionManagement(
             label="Apply filters"
             disabled={busy || uncertain}
             onPress={() => void load(filter)}
-          />
-          <Button
-            label="Clear filters"
-            disabled={busy || uncertain}
-            onPress={() => void load({})}
           />
           {props.onAdd && (
             <Button

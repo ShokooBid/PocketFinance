@@ -107,6 +107,37 @@ async function fillEntry(entry: Awaited<ReturnType<typeof openEntry>>) {
   );
 }
 
+it("uses the first compatible account without saving a default or replacing a manual selection", async () => {
+  const cad = rows.find((row) => row.id === accountId("CAD"))!;
+  const usd = rows.find((row) => row.id === accountId("USD"))!;
+  const savings = {
+    ...cad,
+    id: "20000000-0000-4000-8000-000000000099",
+    name: "Savings"
+  };
+  rows = [
+    usd,
+    { ...cad, id: accountId("JPY"), archivedAt: "2026-11-10T00:00:00Z" },
+    savings,
+    cad
+  ];
+  policy.defaultAccountId = null;
+  const setDefault = jest.spyOn(policy, "setDefaultAccount");
+  const entry = await openEntry();
+  expect(entry.result.current.draft.accountId).toBe(savings.id);
+  expect(entry.result.current.dirty).toBe(false);
+  expect(setDefault).not.toHaveBeenCalled();
+
+  act(() => entry.result.current.selectAccount(cad.id, rows));
+  await act(async () => entry.result.current.reload());
+  expect(entry.result.current.draft.accountId).toBe(cad.id);
+  entry.unmount();
+
+  policy.defaultAccountId = cad.id;
+  const reopened = await openEntry();
+  expect(reopened.result.current.draft.accountId).toBe(cad.id);
+});
+
 describe("shared transaction editing", () => {
   it.each([false, true])(
     "restores Add after saving (dirty=%s)",
@@ -139,7 +170,6 @@ describe("shared transaction editing", () => {
         entry.result.current.editTransaction(current, () => {});
       });
       expect(entry.result.current.editingTransaction?.id).toBe(id);
-      expect(entry.result.current.leaving).toBeNull();
       act(() => entry.result.current.change({ amount: "15.00" }));
       const update = jest.spyOn(source, "update");
       const create = jest.spyOn(source, "create");
@@ -266,7 +296,7 @@ describe("entry category defaults", () => {
       entry.result.current.selectCategory(shopping.id, rows);
       entry.result.current.cancelEditing(() => {});
     });
-    expect(entry.result.current.leaving).toBeNull();
+    expect(entry.result.current.editingTransaction).toBeNull();
     expect(entry.result.current.draft.categoryId).toBe(groceries.id);
     expect(await categories.lastUsedCategoryId()).toBe(groceries.id);
 
@@ -514,17 +544,6 @@ describe("session entry coordination", () => {
     );
     expect(entry.result.current.saved).toMatchObject({ kind: "transaction" });
   });
-  it("keeps a dirty draft when the user cancels a discard request", async () => {
-    const entry = await openEntry();
-    await fillEntry(entry);
-    const leave = jest.fn();
-    act(() => entry.result.current.requestDiscard(leave));
-    expect(leave).not.toHaveBeenCalled();
-    expect(entry.result.current.leaving).not.toBeNull();
-    act(() => entry.result.current.setLeaving(null));
-    expect(entry.result.current.draft.amount).toBe("12.34");
-    expect(leave).not.toHaveBeenCalled();
-  });
   it("keeps a manually chosen date across midnight and clears all draft state on a new session", async () => {
     jest.useFakeTimers({ now: new Date(2026, 10, 9, 23, 59, 50) });
     const entry = await openEntry();
@@ -566,6 +585,46 @@ async function fillTransfer(entry: Awaited<ReturnType<typeof openEntry>>) {
 }
 
 describe("transfer entry coordination", () => {
+  it("opens a transfer directly over an unsaved transaction edit and restores Add on cancel", async () => {
+    const entry = await openEntry();
+    await fillEntry(entry);
+    await act(async () => entry.result.current.save());
+    const transaction = await source.get(entry.result.current.saved!.id);
+    const { from, to } = await fillTransfer(entry);
+    const addDraft = entry.result.current.draft;
+    const transfer = await transfers.create({
+      fromAccountId: from.id,
+      toAccountId: to.id,
+      amountMinor: 4000,
+      date: "2026-11-09",
+      note: "Saved transfer",
+      clientRequestId: "90000000-0000-4000-8000-000000000087"
+    });
+    const open = jest.fn();
+    act(() => entry.result.current.editTransaction(transaction, () => {}));
+    act(() =>
+      entry.result.current.change({ amount: "30", note: "Unsaved edit" })
+    );
+    await act(async () => entry.result.current.reload());
+    expect(entry.result.current.draft.amount).toBe("30");
+
+    act(() => entry.result.current.editTransfer(transfer, open));
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(entry.result.current.editingTransaction).toBeNull();
+    expect(entry.result.current.editingTransfer?.id).toBe(transfer.id);
+    expect(entry.result.current.draft).toMatchObject({
+      amount: "40",
+      note: "Saved transfer"
+    });
+    expect((await source.get(transaction.id)).amountMinor).toBe(1234);
+
+    const cancel = jest.fn();
+    act(() => entry.result.current.cancelEditing(cancel));
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(entry.result.current.editingTransfer).toBeNull();
+    expect(entry.result.current.draft).toEqual(addDraft);
+  });
+
   it("keeps a deleted uncertain edit recoverable without creating another transfer", async () => {
     const entry = await openEntry(),
       { from, to } = await fillTransfer(entry);
@@ -578,11 +637,6 @@ describe("transfer entry coordination", () => {
       clientRequestId: "90000000-0000-4000-8000-000000000088"
     });
     act(() => entry.result.current.editTransfer(saved, () => {}));
-    act(() => {
-      const action = entry.result.current.leaving!.action;
-      entry.result.current.setLeaving(null);
-      action();
-    });
     act(() => entry.result.current.change({ amount: "30" }));
     jest
       .spyOn(transfers, "update")
@@ -697,6 +751,7 @@ describe("transfer entry coordination", () => {
   it("edits the aggregate in the same draft and reconciles a committed update without resending", async () => {
     const entry = await openEntry(),
       { from, to } = await fillTransfer(entry);
+    const addDraft = entry.result.current.draft;
     const saved = await transfers.create({
       fromAccountId: from.id,
       toAccountId: to.id,
@@ -704,12 +759,6 @@ describe("transfer entry coordination", () => {
       date: "2026-11-09",
       note: null,
       clientRequestId: "90000000-0000-4000-8000-000000000099"
-    });
-    act(() => entry.result.current.requestDiscard());
-    act(() => {
-      const action = entry.result.current.leaving!.action;
-      entry.result.current.setLeaving(null);
-      action();
     });
     const navigate = jest.fn();
     act(() => entry.result.current.editTransfer(saved, navigate));
@@ -740,6 +789,7 @@ describe("transfer entry coordination", () => {
     expect(update.mock.calls[0]![0]).toBe(saved.id);
     expect(update.mock.calls[0]![1]).not.toHaveProperty("clientRequestId");
     expect(entry.result.current.uncertain).toBe(false);
+    expect(entry.result.current.draft).toEqual(addDraft);
     expect(entry.result.current.saved).toMatchObject({
       id: saved.id,
       kind: "transfer"

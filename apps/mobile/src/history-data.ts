@@ -329,7 +329,7 @@ export function historyFailureMessage(error: unknown) {
     if (error.kind === "validation")
       return "Check the filters: use both real dates, in order and no more than 366 days apart.";
     if (error.kind === "unavailable")
-      return "The selected record, account or category is unavailable. Clear the selection and reload History.";
+      return "The selected account or category is unavailable. Adjust your filters and try again.";
     if (error.kind === "rate-limit")
       return "Too many requests. Wait a moment, then try again.";
   }

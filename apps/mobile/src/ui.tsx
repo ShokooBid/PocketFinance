@@ -1,4 +1,4 @@
-import { type PropsWithChildren, type ReactNode } from "react";
+import { useState, type PropsWithChildren, type ReactNode } from "react";
 import { Link, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -179,14 +179,20 @@ export function Screen({
   backAction?: { label: string; onPress: () => void };
   showUserMenu?: boolean;
   onViewportLayout?: (layout: { width: number; height: number }) => void;
-  appearance?: "standard" | "welcome" | "entry" | "overview";
+  appearance?: "standard" | "welcome" | "entry" | "history" | "overview";
 }>) {
   const router = useRouter();
+  const [toolbarBottom, setToolbarBottom] = useState(0);
+  const entry = appearance === "entry";
+  const financeList = appearance === "history" || appearance === "overview";
+  const gradientHeader = entry || financeList;
+  // Leave room for the rising edge of the wave when the title wraps or scales.
+  const gradientHeight = Math.ceil((toolbarBottom + theme.space.sm) * 1.4);
   return (
     <SafeAreaView
       style={styles.safeArea}
       edges={
-        appearance === "entry" || appearance === "overview"
+        gradientHeader
           ? ["top", "left", "right"]
           : ["top", "bottom", "left", "right"]
       }
@@ -196,18 +202,20 @@ export function Screen({
         contentContainerStyle={[
           styles.content,
           appearance === "welcome" && styles.welcomeContent,
-          appearance === "entry" && styles.entryContent,
+          entry && styles.entryContent,
+          appearance === "history" && styles.historyContent,
           appearance === "overview" && styles.overviewContent
         ]}
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
         keyboardDismissMode="on-drag"
-        bounces={appearance !== "entry"}
-        showsVerticalScrollIndicator={appearance !== "entry"}
+        bounces={!entry}
+        showsVerticalScrollIndicator={!entry}
       >
         <ScreenDecoration
           prominent={appearance === "welcome"}
-          entry={appearance === "entry" || appearance === "overview"}
+          entry={gradientHeader}
+          entryHeight={gradientHeight}
         />
         {(back || backAction) && (
           <Button
@@ -225,10 +233,16 @@ export function Screen({
           <Text style={styles.brand}>POCKETFINANCE</Text>
         )}
         <View
+          onLayout={
+            gradientHeader
+              ? ({ nativeEvent: { layout } }) =>
+                  setToolbarBottom(layout.y + layout.height)
+              : undefined
+          }
           style={[
             styles.toolbar,
-            appearance === "entry" && styles.entryToolbar,
-            appearance === "overview" && styles.overviewToolbar
+            gradientHeader && styles.gradientToolbar,
+            financeList && styles.financeListToolbar
           ]}
         >
           {appearance === "overview" && (
@@ -242,18 +256,22 @@ export function Screen({
               />
             </Svg>
           )}
-          <Text
-            accessibilityRole="header"
-            accessibilityLabel={`${title} screen`}
-            style={[
-              styles.heading,
-              appearance === "welcome" && styles.welcomeHeading,
-              appearance === "entry" && styles.entryHeading,
-              appearance === "overview" && styles.overviewHeading
-            ]}
-          >
-            {appearance === "overview" ? "PocketFinance" : title}
-          </Text>
+          <View style={styles.titleGroup}>
+            {gradientHeader && (
+              <Text style={styles.financeBrand}>Pocket Finance</Text>
+            )}
+            <Text
+              accessibilityRole="header"
+              accessibilityLabel={`${title} screen`}
+              style={[
+                styles.heading,
+                appearance === "welcome" && styles.welcomeHeading,
+                gradientHeader && styles.gradientSubtitle
+              ]}
+            >
+              {title}
+            </Text>
+          </View>
           {showUserMenu && <UserMenu />}
         </View>
         {children}
@@ -356,19 +374,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     gap: 6
   },
+  historyContent: { paddingTop: 14 },
   overviewContent: {
     paddingTop: 14,
     paddingHorizontal: 12,
     paddingBottom: 28,
     gap: 18
   },
-  overviewToolbar: { marginBottom: 42, paddingHorizontal: 8, gap: 10 },
-  overviewHeading: { color: theme.color.onPrimary, fontSize: 24 },
-  entryToolbar: {
-    marginBottom: 0,
-    paddingHorizontal: 8
+  gradientToolbar: { paddingHorizontal: 8 },
+  financeListToolbar: { marginBottom: 42, gap: 10 },
+  titleGroup: { flex: 1 },
+  financeBrand: {
+    color: theme.color.onPrimary,
+    fontSize: 26,
+    fontWeight: "700"
   },
-  entryHeading: { color: theme.color.onPrimary, fontSize: 20 },
+  gradientSubtitle: { color: theme.color.onPrimary, fontSize: 19 },
   welcomeHeading: { textAlign: "center", fontSize: 34, fontWeight: "800" },
   brand: {
     color: theme.color.muted,
@@ -385,7 +406,6 @@ const styles = StyleSheet.create({
     zIndex: 10
   },
   heading: {
-    flex: 1,
     color: theme.color.primary,
     fontSize: theme.font.heading,
     fontWeight: "700"

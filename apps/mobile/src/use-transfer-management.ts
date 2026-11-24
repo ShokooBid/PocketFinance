@@ -76,7 +76,7 @@ export function useTransferManagement({
         setRows([row]);
         setAfter(null);
         setHighlightedId(row.id);
-        setNotice("Saved transfer shown. Reload to browse all transfers.");
+        setNotice(null);
         focusConsumed.current?.();
       })
       .catch(() => {
@@ -135,6 +135,7 @@ export function useTransferManagement({
         );
         setChoices(nextAccounts);
         setAfter(page.nextCursor);
+        if (!more) setHighlightedId(null);
         setReady(true);
         if (detailId && page.items[0]) {
           const row = page.items[0],

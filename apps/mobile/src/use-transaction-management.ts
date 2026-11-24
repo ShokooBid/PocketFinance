@@ -113,7 +113,7 @@ export function useTransactionManagement({
           // but require a fresh first page before continuing this pagination chain.
           if (change.type === "saved") {
             setAfter(null);
-            setNotice("History changed. Reload to continue paging.");
+            setNotice("History changed. Apply filters to continue paging.");
           }
         }
       }),
@@ -183,7 +183,7 @@ export function useTransactionManagement({
         setApplied({});
         setFilter({});
         setHighlightedId(row.id);
-        setNotice("Saved record shown. Reload to browse all history.");
+        setNotice("Apply filters to browse the full transaction list.");
         focusConsumed.current?.();
       })
       .catch(() => {
@@ -238,6 +238,7 @@ export function useTransactionManagement({
     setBusy(true);
     setLoadingMore(more);
     setError(null);
+    setNotice(null);
     const version = revision.current;
     try {
       const [page, items] = await Promise.all([
