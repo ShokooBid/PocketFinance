@@ -485,150 +485,78 @@ describe("initial migration and database ownership", () => {
   });
 });
 
-describe("authentication storage (service behavior is implemented in Issue #7)", () => {
-  const future = new Date("2099-01-01T00:00:00Z");
+describe("authentication storage", () => {
+  it("keeps only User and Session as authentication tables", async () => {
+    const tables = await sql.query(
+      "SELECT tablename FROM pg_tables WHERE schemaname = current_schema()"
+    );
+    const names = tables.rows.map(
+      (row: { tablename: string }) => row.tablename
+    );
+    expect(names).toEqual(expect.arrayContaining(["User", "Session"]));
+    for (const retired of ["AuthIdentity", "AuthChallenge", "RefreshToken"])
+      expect(names).not.toContain(retired);
+  });
 
-  it("supports password-only, Google-only and explicitly linked accounts", async () => {
-    expect(
-      await db.user.findUniqueOrThrow({ where: { id: userA } })
-    ).toMatchObject({ passwordHash: "!disabled:test" });
+  it("supports password-only, Google-only and password-plus-Google accounts on one row", async () => {
     const googleUser = await db.user.create({
-      data: { email: "google-only@example.invalid" }
+      data: {
+        email: "google-only@example.invalid",
+        googleSubject: "synthetic-google-only"
+      }
     });
     expect(googleUser.passwordHash).toBeNull();
-    await db.authIdentity.create({
-      data: {
-        userId: googleUser.id,
-        provider: "google",
-        providerSubject: "synthetic-google-only"
-      }
-    });
-    await db.authIdentity.create({
-      data: {
-        userId: userA,
-        provider: "google",
-        providerSubject: "synthetic-linked"
-      }
-    });
-    const linked = await db.user.findUniqueOrThrow({
+    await db.user.update({
       where: { id: userA },
-      include: { identities: true }
+      data: { googleSubject: "synthetic-linked" }
     });
-    expect(linked.passwordHash).toBe("!disabled:test");
-    expect(linked.identities).toHaveLength(1);
-  });
-
-  it("rejects duplicate Google subjects, duplicate provider links and missing identity owners", async () => {
-    const owner = await db.user.create({
-      data: { email: "identity-owner@example.invalid" }
-    });
-    await db.authIdentity.create({
-      data: {
-        userId: owner.id,
-        provider: "google",
-        providerSubject: "synthetic-unique"
-      }
-    });
-    const insert = (userId: string, subject: string) =>
-      sql.query(
-        'INSERT INTO "AuthIdentity" ("userId", provider, "providerSubject") VALUES ($1, \'google\', $2)',
-        [userId, subject]
-      );
-    await expect(insert(userB, "synthetic-unique")).rejects.toMatchObject({
-      code: "23505"
-    });
-    await expect(insert(owner.id, "synthetic-other")).rejects.toMatchObject({
-      code: "23505"
-    });
-    await expect(
-      insert(randomUUID(), "synthetic-orphan")
-    ).rejects.toMatchObject({ code: "23503" });
-    await expect(insert(userB, "")).rejects.toMatchObject({ code: "23514" });
-  });
-
-  it("retains consumed token hashes and persists a session revocation boundary", async () => {
-    const session = await db.session.create({
-      data: { userId: userB, expiresAt: future }
-    });
-    const oldToken = await db.refreshToken.create({
-      data: {
-        sessionId: session.id,
-        tokenHash: "a".repeat(64),
-        expiresAt: future
-      }
-    });
-    await db.$transaction([
-      db.refreshToken.update({
-        where: { id: oldToken.id },
-        data: { consumedAt: new Date() }
-      }),
-      db.refreshToken.create({
-        data: {
-          sessionId: session.id,
-          tokenHash: "b".repeat(64),
-          expiresAt: future
-        }
-      })
-    ]);
     expect(
-      (
-        await db.refreshToken.findUniqueOrThrow({
-          where: { tokenHash: oldToken.tokenHash }
-        })
-      ).consumedAt
-    ).not.toBeNull();
-    await db.session.update({
-      where: { id: session.id },
-      data: { revokedAt: new Date() }
+      await db.user.findUniqueOrThrow({ where: { id: userA } })
+    ).toMatchObject({
+      passwordHash: "!disabled:test",
+      googleSubject: "synthetic-linked"
     });
-    const revoked = await db.session.findUniqueOrThrow({
-      where: { id: session.id },
-      include: { refreshTokens: true }
-    });
-    expect(revoked.revokedAt).not.toBeNull();
-    expect(revoked.refreshTokens).toHaveLength(2);
-    // This proves storage capability, not endpoint-level rotation/replay rejection.
-    await expect(
-      sql.query('DELETE FROM "Session" WHERE id = $1', [session.id])
-    ).rejects.toMatchObject({ code: "23503" });
   });
 
-  it("rejects orphan sessions/tokens, duplicate or malformed hashes and invalid lifetimes", async () => {
-    await expect(
-      sql.query(
-        'INSERT INTO "Session" ("userId", "expiresAt") VALUES ($1, $2)',
-        [randomUUID(), future]
-      )
-    ).rejects.toMatchObject({ code: "23503" });
-    await expect(
-      sql.query(
-        'INSERT INTO "Session" ("userId", "expiresAt") VALUES ($1, $2)',
-        [userB, new Date("2000-01-01")]
-      )
-    ).rejects.toMatchObject({ code: "23514" });
-    const session = await db.session.create({
-      data: { userId: userB, expiresAt: future }
+  it("rejects duplicate and blank Google subjects", async () => {
+    await db.user.create({
+      data: {
+        email: "subject-owner@example.invalid",
+        googleSubject: "synthetic-unique"
+      }
     });
-    const insert = (sessionId: string, tokenHash: string, expiry = future) =>
+    const setSubject = (subject: string) =>
+      sql.query('UPDATE "User" SET "googleSubject" = $1 WHERE id = $2', [
+        subject,
+        userB
+      ]);
+    await expect(setSubject("synthetic-unique")).rejects.toMatchObject({
+      code: "23505"
+    });
+    for (const blank of ["", "   "])
+      await expect(setSubject(blank)).rejects.toMatchObject({ code: "23514" });
+  });
+
+  it("rejects orphan sessions and duplicate or malformed token hashes", async () => {
+    const insert = (userId: string, tokenHash: string) =>
       sql.query(
-        'INSERT INTO "RefreshToken" ("sessionId", "tokenHash", "expiresAt") VALUES ($1, $2, $3)',
-        [sessionId, tokenHash, expiry]
+        'INSERT INTO "Session" ("userId", "tokenHash") VALUES ($1, $2)',
+        [userId, tokenHash]
       );
     await expect(insert(randomUUID(), "c".repeat(64))).rejects.toMatchObject({
       code: "23503"
     });
-    await expect(
-      insert(session.id, "raw-token-is-not-a-hash")
-    ).rejects.toMatchObject({ code: "23514" });
-    await expect(insert(session.id, "z".repeat(64))).rejects.toMatchObject({
-      code: "23514"
-    });
-    await expect(
-      insert(session.id, "d".repeat(64), new Date("2000-01-01"))
-    ).rejects.toMatchObject({ code: "23514" });
-    await insert(session.id, "e".repeat(64));
-    await expect(insert(session.id, "e".repeat(64))).rejects.toMatchObject({
+    for (const malformed of ["raw-token-is-not-a-hash", "z".repeat(64)])
+      await expect(insert(userB, malformed)).rejects.toMatchObject({
+        code: "23514"
+      });
+    await insert(userB, "e".repeat(64));
+    await expect(insert(userA, "e".repeat(64))).rejects.toMatchObject({
       code: "23505"
     });
+    // Nothing references a session, so logout deletes the row directly.
+    await sql.query('DELETE FROM "Session" WHERE "tokenHash" = $1', [
+      "e".repeat(64)
+    ]);
   });
 });

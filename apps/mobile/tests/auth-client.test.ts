@@ -7,7 +7,7 @@ import {
   type FetchRequest
 } from "../src/auth/transport";
 import { createApiCategorySource } from "../src/category-api";
-import { alice, harness, response, stored } from "./auth-fixtures";
+import { alice, credentials, harness, response, stored } from "./auth-fixtures";
 
 const first = "20000000-0000-4000-8000-000000000001";
 const second = "20000000-0000-4000-8000-000000000002";
@@ -32,7 +32,7 @@ describe("sign-in methods", () => {
       const h = harness(null);
       await h.controller.restore();
       h.fetcher
-        .mockResolvedValueOnce(response(stored().credentials))
+        .mockResolvedValueOnce(response(credentials()))
         .mockResolvedValueOnce(response(alice));
       await h.controller.signIn(
         method,
@@ -42,7 +42,11 @@ describe("sign-in methods", () => {
       expect(h.fetcher.mock.calls[0]?.[1]?.body).toBe(
         JSON.stringify({ email: alice.email, password: "synthetic password" })
       );
+      expect(h.fetcher.mock.calls[0]?.[1]?.headers).not.toHaveProperty(
+        "Authorization"
+      );
       expect(h.store.write).toHaveBeenCalledTimes(1);
+      expect(h.disk()).toEqual(stored());
       expect(h.controller.getSnapshot()).toMatchObject({
         status: "authenticated",
         user: alice
@@ -52,25 +56,18 @@ describe("sign-in methods", () => {
   it("exchanges nonce-bound Google proof for PocketFinance credentials", async () => {
     const h = harness(null);
     await h.controller.restore();
-    const nonce = "n".repeat(43);
+    const nonce = "1795000000.nnnnnnnnnnnnnnnnnnnnnn." + "m".repeat(43);
     h.fetcher
       .mockResolvedValueOnce(
-        response({
-          challengeId: first,
-          nonce,
-          expiresAt: "2026-10-26T12:05:00Z"
-        })
+        response({ nonce, expiresAt: "2026-10-26T12:05:00Z" })
       )
-      .mockResolvedValueOnce(response(stored().credentials))
+      .mockResolvedValueOnce(response(credentials()))
       .mockResolvedValueOnce(response(alice));
     await h.controller.signIn("google");
     expect(h.proof).toHaveBeenCalledWith(nonce);
+    expect(h.fetcher.mock.calls[0]?.[1]).not.toHaveProperty("body");
     expect(h.fetcher.mock.calls[1]?.[1]?.body).toBe(
-      JSON.stringify({
-        challengeId: first,
-        nonce,
-        idToken: "synthetic-provider-proof"
-      })
+      JSON.stringify({ nonce, idToken: "synthetic-provider-proof" })
     );
     expect(h.fetcher.mock.calls[2]?.[1]?.headers).toMatchObject({
       Authorization: "Bearer synthetic-access"
@@ -83,11 +80,7 @@ describe("sign-in methods", () => {
       const h = harness(null);
       await h.controller.restore();
       h.fetcher.mockResolvedValueOnce(
-        response({
-          challengeId: first,
-          nonce: "n".repeat(43),
-          expiresAt: "2026-10-26T12:05:00Z"
-        })
+        response({ nonce: "n".repeat(43), expiresAt: "2026-10-26T12:05:00Z" })
       );
       if (outcome === "cancel") h.proof.mockResolvedValueOnce(null);
       else h.proof.mockRejectedValueOnce(new Error("private Google response"));
@@ -99,7 +92,7 @@ describe("sign-in methods", () => {
       expect(h.controller.getSnapshot().status).toBe("signed-out");
       expect(h.store.write).not.toHaveBeenCalled();
       h.fetcher
-        .mockResolvedValueOnce(response(stored().credentials))
+        .mockResolvedValueOnce(response(credentials()))
         .mockResolvedValueOnce(response(alice));
       await h.controller.signIn("login", alice.email, "synthetic password");
       expect(h.controller.getSnapshot().status).toBe("authenticated");
@@ -167,19 +160,19 @@ describe("category API adapter", () => {
     });
     expect(h.fetcher).toHaveBeenCalledTimes(before + 1);
   });
-  it("refreshes a write once after a definitive 401 and never retries network failures", async () => {
+  it("signs out on a 401 write without replaying it", async () => {
     const h = harness();
     await h.controller.restore();
-    h.fetcher
-      .mockResolvedValueOnce(response({}, 401))
-      .mockResolvedValueOnce(response(stored("new").credentials))
-      .mockResolvedValueOnce(response(category(first), 201));
-    await createApiCategorySource(h.client()).create("Food");
+    h.fetcher.mockResolvedValueOnce(response({}, 401));
+    await expect(
+      createApiCategorySource(h.client()).create("Food")
+    ).rejects.toBeDefined();
     expect(
       h.fetcher.mock.calls.filter(([url]) =>
         String(url).endsWith("/categories")
       )
-    ).toHaveLength(2);
+    ).toHaveLength(1);
+    expect(h.controller.getSnapshot().status).toBe("signed-out");
   });
   it("reads bounded owner-scoped recent categories independently of history", async () => {
     const h = harness();
@@ -235,7 +228,10 @@ describe("transport boundaries", () => {
       "/v1/categories//other",
       "/v1/categories/../preferences",
       "/v1/preferences/other",
-      "/v1/preferences?userId=other"
+      "/v1/preferences?userId=other",
+      "/v1/auth/refresh",
+      "/v1/auth/reauthenticate",
+      "/v1/auth/google/link"
     ])
       await expect(client.send("GET", path, z.unknown())).rejects.toMatchObject(
         { kind: "configuration" }

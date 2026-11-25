@@ -11,7 +11,6 @@ export type FailureKind =
   | "protocol"
   | "configuration"
   | "storage"
-  | "ambiguous"
   | "cancelled"
   | "provider";
 
@@ -42,8 +41,6 @@ export function failureMessage(error: unknown): string {
     configuration:
       "Sign-in is unavailable in this build. You can still explore the demo.",
     storage: "Secure storage is unavailable. Retry before continuing.",
-    ambiguous:
-      "Session renewal could not be confirmed. Sign in again to continue safely.",
     cancelled: "Sign-in was cancelled.",
     provider:
       "Google sign-in is unavailable. Try again or use email and password."
@@ -57,8 +54,7 @@ export interface Transport {
     path: string,
     schema: z.ZodType<T>,
     body?: unknown,
-    accessToken?: string,
-    sessionPolicy?: "persistent"
+    accessToken?: string
   ): Promise<T>;
 }
 // Only this subset of fetch is used. Keep native/DOM/Node overloads out of the
@@ -94,11 +90,11 @@ export function createTransport(
     /* Missing configuration leaves the demo available. */
   }
   return {
-    async send(method, path, schema, body, accessToken, sessionPolicy) {
+    async send(method, path, schema, body, accessToken) {
       if (
         !origin ||
         !(
-          /^\/v1\/(?:me|preferences|auth\/(?:register|login|refresh|logout|reauthenticate|google(?:\/challenges|\/link)?))$/.test(
+          /^\/v1\/(?:me|preferences|auth\/(?:register|login|logout|google(?:\/challenges)?))$/.test(
             path
           ) ||
           /^\/v1\/(?:accounts|categories)(?:\/[0-9a-f-]{36}(?:\/archive)?)?(?:\?[A-Za-z0-9=&_.%+-]+)?$/i.test(
@@ -128,10 +124,7 @@ export function createTransport(
             ...(body === undefined
               ? {}
               : { "Content-Type": "application/json" }),
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-            ...(sessionPolicy
-              ? { "X-PocketFinance-Session-Policy": sessionPolicy }
-              : {})
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
           },
           ...(body === undefined ? {} : { body: JSON.stringify(body) })
         });

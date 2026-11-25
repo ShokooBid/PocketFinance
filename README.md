@@ -85,9 +85,9 @@ The API publishes OpenAPI from its route schemas and enforces server-side author
 - **Explicit retry handling:** transaction creation uses a request UUID and an
   immutable creation fingerprint to recognize equivalent retries. Protection lasts
   while the transaction exists; hard deletion releases the key.
-- **Session recovery:** refresh-token rotation, server revocation, and secure
-  credential storage are handled outside UI rendering. Ambiguous refresh outcomes
-  require explicit sign-in recovery.
+- **Sessions:** one opaque, hashed token per device stays valid until sign-out.
+  Revocation (this device or all devices) is immediate on the server, and the
+  token is kept only in secure device storage.
 - **Accounting dates:** transactions use calendar dates rather than converting
   accounting days through server timezones.
 - **Aggregate reporting:** the API totals persisted postings for one currency;

@@ -48,8 +48,9 @@ documented. One item remains because the fix is in source code:
    this accepted long-term? Or should a `packages/contracts` workspace (or
    OpenAPI-generated client types) be introduced when import and AI work adds
    more endpoints?
-10. **Google linking UI and all-device sign-out.** The API supports both
-    (#16), but mobile appears to expose only Sign out. Is the UI still planned?
+10. **All-device sign-out UI.** The API supports it, but mobile exposes only
+    Sign out. Is the UI still planned? (Google linking was removed on
+    2026-11-25; re-adding it would need a reauthentication step again.)
 11. **Sign in with Apple.** Required before any iOS submission (#22). Is iOS
     distribution a goal?
 12. **CSV import.** Which bank formats come first, and should it reuse the

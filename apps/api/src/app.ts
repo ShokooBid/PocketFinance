@@ -83,7 +83,6 @@ export async function buildApp(
               "req.headers.cookie",
               "password",
               "accessToken",
-              "refreshToken",
               "idToken",
               "nonce"
             ],
@@ -209,7 +208,7 @@ export async function buildApp(
       info: { title: "PocketFinance API", version: "0.1.0" },
       components: {
         securitySchemes: {
-          bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" }
+          bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "opaque" }
         }
       }
     },

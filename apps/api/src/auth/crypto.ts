@@ -1,9 +1,12 @@
-import { createHash, randomBytes } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual
+} from "node:crypto";
 import argon2 from "argon2";
-import { jwtVerify, SignJWT } from "jose";
-import type { Config } from "../config.js";
-import { invalidCredentials } from "../errors.js";
 
+// 256 bits of entropy, base64url (43 characters). Used for session tokens.
 export const randomToken = () => randomBytes(32).toString("base64url");
 export const tokenHash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -32,46 +35,26 @@ export async function passwordVerifier() {
   };
 }
 
-export async function accessToken(
-  config: Config,
-  userId: string,
-  sessionId: string,
-  now: Date,
-  expires: Date
-) {
-  return new SignJWT({ sid: sessionId })
-    .setProtectedHeader({ alg: "HS256", typ: "at+jwt" })
-    .setSubject(userId)
-    .setIssuer(config.issuer)
-    .setAudience(config.audience)
-    .setIssuedAt(Math.floor(now.getTime() / 1000))
-    .setExpirationTime(Math.floor(expires.getTime() / 1000))
-    .sign(config.tokenKey);
+// Stateless Google sign-in nonce: "<expiry seconds>.<random>.<HMAC>". It binds a
+// Google ID token to a short window issued by this server without a table. It
+// is not single-use; the window is bounded by CHALLENGE_TTL_SECONDS.
+export const nonceFormat = /^\d{1,12}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/;
+const mac = (key: Uint8Array, body: string) =>
+  createHmac("sha256", key).update(`google-nonce.${body}`).digest("base64url");
+
+export function signNonce(key: Uint8Array, expiresAt: Date) {
+  const body = `${Math.floor(expiresAt.getTime() / 1000)}.${randomBytes(16).toString("base64url")}`;
+  return `${body}.${mac(key, body)}`;
 }
 
-export async function verifyAccess(config: Config, token: string, now: Date) {
-  try {
-    const { payload } = await jwtVerify(token, config.tokenKey, {
-      algorithms: ["HS256"],
-      typ: "at+jwt",
-      issuer: config.issuer,
-      audience: config.audience,
-      currentDate: now,
-      requiredClaims: ["sub", "sid", "iat", "exp"]
-    });
-    const uuid =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (
-      typeof payload.sub !== "string" ||
-      !uuid.test(payload.sub) ||
-      typeof payload.sid !== "string" ||
-      !uuid.test(payload.sid) ||
-      typeof payload.iat !== "number" ||
-      payload.iat > now.getTime() / 1000
-    )
-      throw invalidCredentials();
-    return { userId: payload.sub, sessionId: payload.sid };
-  } catch {
-    throw invalidCredentials();
-  }
+export function nonceValid(key: Uint8Array, nonce: string, now: Date) {
+  if (!nonceFormat.test(nonce)) return false;
+  const body = nonce.slice(0, nonce.lastIndexOf("."));
+  const expected = Buffer.from(mac(key, body));
+  const actual = Buffer.from(nonce.slice(body.length + 1));
+  return (
+    actual.length === expected.length &&
+    timingSafeEqual(actual, expected) &&
+    Number(body.slice(0, body.indexOf("."))) * 1000 > now.getTime()
+  );
 }

@@ -5,14 +5,20 @@ import type * as GoogleModule from "react-native-nitro-google-signin";
 import { Platform } from "react-native";
 import { ClientFailure } from "./transport";
 
+// Google needs a development/release build (not Expo Go) and public client IDs.
+// The sign-in screen hides the button when this is false.
+export function googleConfigured(): boolean {
+  return (
+    Constants.executionEnvironment !== "storeClient" &&
+    !!process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID &&
+    (Platform.OS !== "ios" || !!process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID)
+  );
+}
+
 export async function googleProof(nonce: string): Promise<string | null> {
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
   const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
-  if (
-    Constants.executionEnvironment === "storeClient" ||
-    !webClientId ||
-    (Platform.OS === "ios" && !iosClientId)
-  )
+  if (!googleConfigured() || !webClientId)
     throw new ClientFailure("configuration");
   try {
     // Metro's lazy require keeps Expo Go previews from evaluating Nitro bindings.
@@ -20,7 +26,7 @@ export async function googleProof(nonce: string): Promise<string | null> {
       GoogleOneTapSignIn: google
     }: typeof GoogleModule = require("react-native-nitro-google-signin");
     // Both native implementations pass this nonce through unchanged. It must
-    // exactly match the backend challenge; do not hash or generate another one.
+    // exactly match the backend-signed nonce; do not hash or generate another one.
     google.configure({
       webClientId,
       ...(iosClientId ? { iosClientId } : {}),

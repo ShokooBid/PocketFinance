@@ -14,18 +14,12 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 describe("platform credential storage", () => {
-  it("stores the rotation record as one device-only item and reads legacy records", async () => {
+  it("stores the device token as one device-only item and reads it back", async () => {
     jest.replaceProperty(Platform, "OS", "ios");
     const session = stored();
-    jest.mocked(SecureStore.getItemAsync).mockResolvedValueOnce(
-      JSON.stringify({
-        ...session,
-        credentials: {
-          ...session.credentials,
-          sessionExpiresAt: "2026-10-27T12:00:00Z"
-        }
-      })
-    );
+    jest
+      .mocked(SecureStore.getItemAsync)
+      .mockResolvedValueOnce(JSON.stringify(session));
     await credentialStore.write(session);
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
       "pocketfinance.session.v1",
@@ -38,6 +32,23 @@ describe("platform credential storage", () => {
       "pocketfinance.session.v1",
       expect.any(Object)
     );
+  });
+  it("discards a legacy refresh-token record so the user signs in once more", async () => {
+    jest.replaceProperty(Platform, "OS", "ios");
+    jest.mocked(SecureStore.getItemAsync).mockResolvedValueOnce(
+      JSON.stringify({
+        version: 1,
+        refreshPending: false,
+        credentials: {
+          accessToken: "synthetic-access",
+          refreshToken: "r".repeat(43),
+          tokenType: "Bearer",
+          accessExpiresAt: "2026-10-27T12:00:00Z"
+        }
+      })
+    );
+    expect(await credentialStore.read()).toBeNull();
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledTimes(1);
   });
   it("deletes malformed credentials while preserving data on OS storage failure", async () => {
     jest.replaceProperty(Platform, "OS", "android");

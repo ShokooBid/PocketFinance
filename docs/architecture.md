@@ -39,7 +39,7 @@ Expo mobile app  ── HTTPS/JSON ──>  Fastify REST API  ──>  PostgreSQ
 - Authorization is enforced server-side on every read and write. Client-side
   filtering or hidden UI is never an authorization control.
 - The app communicates with the API only over HTTPS in production. Secrets,
-  database credentials, password hashes, refresh tokens, and provider keys remain
+  database credentials, password hashes, session token hashes, and provider keys remain
   on the server and are never bundled with the mobile app.
 
 ## REST and versioning
@@ -203,24 +203,23 @@ and [verification record](mobile-redesign/verification.md#issue-117-overview-rep
   sessions and resolve to the same stable user ID; finance ownership is unchanged.
 - Passwords use a modern adaptive hash (planned: Argon2id). A Google-only user
   has a null password hash. Null, malformed, or disabled credentials fail closed.
-- Google identity is identified by verified provider plus subject, never email
-  alone. The server validates the provider proof and login challenge. Linking
-  requires recent proof of the existing account and the new Google identity;
-  matching email addresses never automatically link or merge accounts.
-- Access tokens are short-lived. A session is a per-device revocation boundary.
-  Random refresh tokens are stored server-side only as hashes. Rotation consumes
-  the old record atomically and retains its hash for replay detection; reuse
-  revokes that session. Closing the app does not end the session.
+- Google identity is identified by the verified subject (`User.googleSubject`),
+  never email alone. The server validates the provider proof and a server-signed
+  nonce. Matching email addresses never link or merge accounts, and there is no
+  linking flow (removed 2026-11-25).
+- A session is one opaque random token per device, stored server-side only as a
+  hash, valid until sign-out (this device or all devices) or the user is
+  disabled. There is no refresh or expiry; closing the app does not end the
+  session. The trade-off is recorded in the authentication plan.
 - Mobile tokens live only in platform-secure storage, never ordinary async/local
   storage, source control, analytics payloads, screenshots, or logs.
 - Authentication endpoints are rate-limited and return generic credential errors
   that do not reveal whether an account exists.
-- The backend implements password/Google proofs, explicit linking, server-checked
-  access, refresh rotation and revocation. Google challenges are persisted and
-  consumed once. Mobile restoration uses the session controller and secure-store
+- The backend implements password/Google proofs, server-checked access and
+  revocation. Mobile restoration uses the session controller and secure-store
   adapter; native provider/device acceptance is tracked separately from mocked tests.
-- See [Authentication plan](authentication-plan.md) for session lifetimes,
-  provider setup, linking rules, implementation order, and release requirements.
+- See [Authentication plan](authentication-plan.md) for the session model,
+  provider setup, and release requirements.
 
 ## AI and automation boundary
 

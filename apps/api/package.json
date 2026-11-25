@@ -8,7 +8,6 @@
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "openapi": "tsx src/openapi.ts",
-    "auth:cleanup": "tsx src/cleanup.ts",
     "lint": "eslint src --max-warnings=0",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",

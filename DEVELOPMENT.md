@@ -38,7 +38,8 @@ Preserve existing configuration. Edit the ignored `.env`:
 1. Replace `POSTGRES_PASSWORD` with a unique local password.
 2. Set `DATABASE_URL` to matching local credentials, URL-encoding reserved
    characters in the password.
-3. Replace `ACCESS_TOKEN_SECRET` with a locally generated signing secret:
+3. Replace `ACCESS_TOKEN_SECRET` with a locally generated secret (it signs
+   Google sign-in nonces):
 
    ```sh
    node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
@@ -106,7 +107,9 @@ The default address is `http://127.0.0.1:3000`. `GET /health` is public.
 `POST /v1/auth/register` and `POST /v1/auth/login` accept an email and password;
 registration requires a 12-128 character password. Send the returned access token
 as `Authorization: Bearer <accessToken>` to authenticated routes such as
-`GET /v1/me`. Refresh tokens rotate after use; persist their replacements securely.
+`GET /v1/me`. The token is opaque and stays valid until `POST /v1/auth/logout`
+(optionally `{ "allSessions": true }`); there is no refresh step. See
+[docs/authentication-plan.md](docs/authentication-plan.md).
 
 ### Backend errors while testing with Expo
 
@@ -222,10 +225,8 @@ history belong to that existing database.
 Native builds now use `com.shokoobid.pocketfinance` and the `pocketfinance` URL
 scheme. Configure matching Android and iOS Google OAuth clients, update the public
 client IDs and API presenter allowlist, and rebuild the app. The new native app
-identity has its own secure storage, so sign in again after installing it. Updating
-the API token issuer or audience also requires a new access token; refreshing or
-signing in obtains one. Existing server-side account and transaction data stays
-in the same database.
+identity has its own secure storage, so sign in again after installing it.
+Existing server-side account and transaction data stays in the same database.
 
 ## Verification
 

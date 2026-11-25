@@ -143,7 +143,9 @@ describe("Fastify foundation", () => {
     const app = await setup();
     await app.ready();
     const paths = app.swagger().paths!;
-    expect(Object.keys(paths)).toHaveLength(10);
+    expect(Object.keys(paths)).toHaveLength(7);
+    for (const retired of ["refresh", "google/link", "reauthenticate"])
+      expect(paths).not.toHaveProperty(`/v1/auth/${retired}`);
     expect(paths["/v1/auth/register"]?.post).toHaveProperty("requestBody");
     expect(paths["/v1/me"]?.get?.security).toEqual([{ bearerAuth: [] }]);
   });
@@ -339,7 +341,7 @@ describe("Fastify foundation", () => {
     expect(() => readConfig({ ...env, CORS_ORIGINS: "*" })).toThrow("CORS");
     expect(
       readConfig({ ...env, CORS_ORIGINS: "https://app.example.invalid" })
-        .accessSeconds
-    ).toBe(900);
+        .challengeSeconds
+    ).toBe(300);
   });
 });

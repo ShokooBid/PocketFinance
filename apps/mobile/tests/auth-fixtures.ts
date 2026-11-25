@@ -17,21 +17,14 @@ export const bob = {
   id: "10000000-0000-4000-8000-000000000002",
   email: "bob@example.invalid"
 };
-export function stored(
-  accessToken = "synthetic-access",
-  expired = false
-): StoredSession {
-  return {
-    version: 1,
-    refreshPending: false,
-    credentials: {
-      accessToken,
-      refreshToken: "r".repeat(43),
-      tokenType: "Bearer",
-      accessExpiresAt: new Date(now + (expired ? -1000 : 600000)).toISOString()
-    }
-  };
+export function stored(token = "synthetic-access"): StoredSession {
+  return { version: 2, token };
 }
+// The API's sign-in response for one opaque device token.
+export const credentials = (accessToken = "synthetic-access") => ({
+  accessToken,
+  tokenType: "Bearer" as const
+});
 export function response(data: unknown, status = 200): Response {
   return {
     ok: status >= 200 && status < 300,
@@ -48,10 +41,7 @@ export function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-export function harness(
-  initial: StoredSession | null = stored(),
-  clock = () => now
-) {
+export function harness(initial: StoredSession | null = stored()) {
   let disk = initial;
   const store = {
     read: jest
@@ -71,7 +61,7 @@ export function harness(
     .fn<(nonce: string) => Promise<string | null>>()
     .mockResolvedValue("synthetic-provider-proof");
   const transport = createTransport("https://api.example.invalid", fetcher);
-  const controller = createSessionController(store, transport, proof, clock);
+  const controller = createSessionController(store, transport, proof);
   const client = () => {
     const state = controller.getSnapshot();
     if (state.status !== "authenticated")

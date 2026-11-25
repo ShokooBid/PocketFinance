@@ -18,19 +18,20 @@ type SessionState =
   | { status: "demo" }
   | { status: "authenticated"; user: User; generation: number };
 
+// One opaque device token, valid until sign-out. Any 401 means the server
+// revoked it (logout elsewhere or a disabled account), so the device signs out.
 export function createSessionController(
   store: CredentialStore,
   transport: Transport,
-  googleProof: GoogleProof,
-  now: () => number = Date.now
+  googleProof: GoogleProof
 ) {
   let state: SessionState = { status: "restoring" };
   let saved: StoredSession | null = null;
+  // Every sign-in, restore, logout and demo switch starts a new epoch. Work
+  // from an older epoch is discarded so a stale response cannot leak across.
   let epoch = 0;
-  let refreshFlight: Promise<void> | undefined;
   let authFlight: Promise<void> | undefined;
   let clearRequired = false;
-  let linking = false;
   let writes = Promise.resolve();
   const listeners = new Set<() => void>();
   const publish = (value: SessionState) => {
@@ -52,7 +53,6 @@ export function createSessionController(
   async function invalidate(generation: number) {
     current(generation);
     const clearingEpoch = ++epoch;
-    refreshFlight = undefined;
     saved = null;
     clearRequired = true;
     publish({ status: "signing-out" });
@@ -70,123 +70,29 @@ export function createSessionController(
       throw new ClientFailure("storage");
     }
   }
-  async function refresh(generation: number) {
-    current(generation);
-    if (refreshFlight) return refreshFlight;
-    if (!saved) throw new ClientFailure("invalid");
-    if (saved.refreshPending) throw new ClientFailure("ambiguous");
-    const pending = { ...saved, refreshPending: true };
-    saved = pending;
-    const work = async () => {
-      // Durable before dispatch: after a crash we cannot know whether rotation
-      // committed. Never silently send the consumed token a second time.
-      await write(pending);
-      current(generation);
-      try {
-        const credentials = await transport.send(
-          "POST",
-          "/v1/auth/refresh",
-          credentialsSchema,
-          { refreshToken: pending.credentials.refreshToken },
-          undefined,
-          "persistent"
-        );
-        current(generation);
-        const replacement: StoredSession = {
-          version: 1,
-          credentials,
-          refreshPending: false
-        };
-        await write(replacement);
-        current(generation);
-        saved = replacement;
-      } catch (error) {
-        current(generation);
-        if (error instanceof ClientFailure && error.kind === "invalid") {
-          await invalidate(generation);
-        } else if (
-          error instanceof ClientFailure &&
-          error.kind === "rate-limit"
-        ) {
-          // The API's limiter rejects before the refresh handler consumes a token.
-          saved = { ...pending, refreshPending: false };
-          await write(saved);
-        }
-        throw error;
-      }
-    };
-    const flight = work();
-    refreshFlight = flight;
-    try {
-      await flight;
-    } finally {
-      if (refreshFlight === flight) refreshFlight = undefined;
-    }
-  }
   async function request<T>(
     method: "GET" | "POST" | "PATCH" | "DELETE",
     path: string,
     schema: z.ZodType<T>,
     body?: unknown,
-    generation = epoch,
-    retryUnauthorized = true
+    generation = epoch
   ): Promise<T> {
     current(generation);
     if (!saved) throw new ClientFailure("invalid");
     try {
-      const refreshed = Date.parse(saved.credentials.accessExpiresAt) <= now();
-      if (refreshed) await refresh(generation);
+      const value = await transport.send(
+        method,
+        path,
+        schema,
+        body,
+        saved.token
+      );
       current(generation);
-      const access = saved!.credentials.accessToken;
-      try {
-        const value = await transport.send(method, path, schema, body, access);
-        current(generation);
-        return value;
-      } catch (error) {
-        current(generation);
-        if (!(error instanceof ClientFailure) || error.kind !== "invalid")
-          throw error;
-        // Proof failures also return 401. Never replay a one-use proof or
-        // mistake a wrong password for a definitively invalid session.
-        if (!retryUnauthorized) throw error;
-        // A late 401 for an old access token shares the completed rotation too.
-        if (saved!.credentials.accessToken === access) {
-          if (refreshed) {
-            await invalidate(generation);
-            throw error;
-          }
-          await refresh(generation);
-        }
-        current(generation);
-        try {
-          const value = await transport.send(
-            method,
-            path,
-            schema,
-            body,
-            saved!.credentials.accessToken
-          );
-          current(generation);
-          return value;
-        } catch (retryError) {
-          current(generation);
-          if (
-            retryError instanceof ClientFailure &&
-            retryError.kind === "invalid"
-          )
-            await invalidate(generation);
-          throw retryError;
-        }
-      }
+      return value;
     } catch (error) {
-      if (generation === epoch && saved?.refreshPending)
-        publish({
-          status: "unavailable",
-          reason:
-            error instanceof ClientFailure && error.kind === "storage"
-              ? "storage"
-              : "ambiguous"
-        });
+      current(generation);
+      if (error instanceof ClientFailure && error.kind === "invalid")
+        await invalidate(generation);
       throw error;
     }
   }
@@ -212,7 +118,7 @@ export function createSessionController(
       .catch(() => {});
     return flight;
   }
-  const controller = {
+  return {
     getSnapshot: () => state,
     subscribe(fn: () => void) {
       listeners.add(fn);
@@ -227,7 +133,6 @@ export function createSessionController(
           return;
         }
         const generation = ++epoch;
-        refreshFlight = undefined;
         publish({ status: "restoring" });
         try {
           await writes;
@@ -243,7 +148,6 @@ export function createSessionController(
             publish({ status: "signed-out" });
             return;
           }
-          if (saved.refreshPending) throw new ClientFailure("ambiguous");
           await validate(generation);
         } catch (error) {
           if (generation === epoch)
@@ -264,35 +168,27 @@ export function createSessionController(
         try {
           let body: unknown = { email: email.trim().toLowerCase(), password };
           if (method === "google") {
-            const challenge = await transport.send(
+            const { nonce } = await transport.send(
               "POST",
               "/v1/auth/google/challenges",
-              challengeSchema,
-              { purpose: "login" }
+              challengeSchema
             );
             current(generation);
-            const idToken = await googleProof(challenge.nonce);
+            const idToken = await googleProof(nonce);
             current(generation);
             if (!idToken) return;
-            body = {
-              challengeId: challenge.challengeId,
-              nonce: challenge.nonce,
-              idToken
-            };
+            body = { nonce, idToken };
           }
           const credentials = await transport.send(
             "POST",
             `/v1/auth/${method}`,
             credentialsSchema,
-            body,
-            undefined,
-            "persistent"
+            body
           );
           current(generation);
           const session: StoredSession = {
-            version: 1,
-            credentials,
-            refreshPending: false
+            version: 2,
+            token: credentials.accessToken
           };
           saved = session;
           await write(session);
@@ -309,80 +205,10 @@ export function createSessionController(
             : new ClientFailure("provider");
         }
       }),
-    async refreshAccount() {
-      if (state.status !== "authenticated") throw new ClientFailure("invalid");
-      await validate(state.generation);
-    },
-    async linkGoogle(password: string): Promise<"linked" | "cancelled"> {
-      if (linking) throw new ClientFailure("conflict");
-      if (
-        state.status !== "authenticated" ||
-        !state.user.methods.password ||
-        state.user.methods.google
-      )
-        throw new ClientFailure("invalid");
-      if (!password.length || password.length > 128)
-        throw new ClientFailure("validation");
-      const generation = state.generation;
-      linking = true;
-      try {
-        await request(
-          "POST",
-          "/v1/auth/reauthenticate",
-          okSchema,
-          { password },
-          generation,
-          false
-        );
-        const challenge = await request(
-          "POST",
-          "/v1/auth/google/challenges",
-          challengeSchema,
-          { purpose: "link" },
-          generation,
-          false
-        );
-        const idToken = await googleProof(challenge.nonce);
-        current(generation);
-        if (!idToken) return "cancelled";
-        await request(
-          "POST",
-          "/v1/auth/google/link",
-          okSchema,
-          {
-            challengeId: challenge.challengeId,
-            nonce: challenge.nonce,
-            idToken
-          },
-          generation,
-          false
-        );
-        current(generation);
-        if (state.status !== "authenticated")
-          throw new ClientFailure("cancelled");
-        // The write is confirmed. Retain the same user, session and ledger even
-        // if a later account read fails. Never replace credentials with Google.
-        publish({
-          ...state,
-          user: {
-            ...state.user,
-            methods: { ...state.user.methods, google: true }
-          }
-        });
-        return "linked";
-      } catch (error) {
-        throw error instanceof ClientFailure
-          ? error
-          : new ClientFailure("provider");
-      } finally {
-        linking = false;
-      }
-    },
     logout: (allSessions = false) =>
       exclusive(async () => {
         const previous = saved;
         ++epoch; // All previously issued readers/adapters become unusable immediately.
-        refreshFlight = undefined;
         saved = null;
         clearRequired = true;
         publish({ status: "signing-out" });
@@ -396,37 +222,13 @@ export function createSessionController(
         let revoked = !previous && !allSessions;
         if (previous) {
           try {
-            let access = previous.credentials.accessToken;
-            try {
-              await transport.send(
-                "POST",
-                "/v1/auth/logout",
-                okSchema,
-                { allSessions },
-                access
-              );
-            } catch (error) {
-              if (
-                !(error instanceof ClientFailure) ||
-                error.kind !== "invalid" ||
-                previous.refreshPending
-              )
-                throw error;
-              const replacement = await transport.send(
-                "POST",
-                "/v1/auth/refresh",
-                credentialsSchema,
-                { refreshToken: previous.credentials.refreshToken }
-              );
-              access = replacement.accessToken;
-              await transport.send(
-                "POST",
-                "/v1/auth/logout",
-                okSchema,
-                { allSessions },
-                access
-              );
-            }
+            await transport.send(
+              "POST",
+              "/v1/auth/logout",
+              okSchema,
+              { allSessions },
+              previous.token
+            );
             revoked = true;
           } catch {
             /* Local logout succeeds even when remote revocation cannot be confirmed. */
@@ -468,6 +270,5 @@ export function createSessionController(
       };
     }
   };
-  return controller;
 }
 export type SessionController = ReturnType<typeof createSessionController>;

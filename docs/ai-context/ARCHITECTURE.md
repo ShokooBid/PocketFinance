@@ -8,16 +8,15 @@ When this map and the code disagree, the code wins.
 ## System shape
 
 ```text
-apps/mobile  ──HTTPS JSON, Bearer JWT──>  apps/api (one Fastify process)  ──>  PostgreSQL
+apps/mobile  ──HTTPS JSON, Bearer token──>  apps/api (one Fastify process)  ──>  PostgreSQL
  Expo Router                                Zod contracts → OpenAPI             Prisma + SQL triggers
  SecureStore tokens                         services own business rules         composite owner FKs
 ```
 
 This is a **monolith API**. `apps/api/src/index.ts` builds one Prisma client and
 every service, then passes them into `buildApp()`. There are no queues, caches,
-or background workers. The one exception is `npm run auth:cleanup
---workspace=@pocketfinance/api` (`src/cleanup.ts`), a one-shot CLI that removes
-dead sessions and challenges.
+or background workers. Logout deletes session rows directly, so there is no
+cleanup job.
 
 ## Repository layout
 
@@ -33,10 +32,10 @@ apps/api/src/
   <module>/service.ts    Prisma logic inside db.$transaction, ownership checks
   modules: auth, preferences, accounts, categories, transactions, transfers, history, dashboard, finance(names)
   generated/prisma/ (git-ignored, from `npm run db:generate`)
-apps/api/prisma/    schema.prisma, 20 migrations (Oct 17 – Nov 23 2026), seed.ts (opt-in synthetic)
+apps/api/prisma/    schema.prisma, 20 migrations (Oct 17 – Nov 25 2026), seed.ts (opt-in synthetic)
 apps/api/tests/     unit tests (*.test.ts) + integration/ (real PostgreSQL), support/disposable.ts
 apps/mobile/src/
-  app/              Expo Router routes: _layout, sign-in, (app)/{index=Add, transactions=History, overview, settings=Accounts, categories, import, transactions/[id], transfers/[id]}
+  app/              Expo Router routes: _layout, sign-in, sign-up (both via auth-form.tsx), (app)/{index=Add, transactions=History, overview, settings=Accounts, categories, import, transactions/[id], transfers/[id]}
   auth/             session-controller, transport (fetch + Zod + ClientFailure), secure-store, google(.native).ts
   *-data.ts         portable data adapters/schemas (live HTTP source + in-memory demo source)
   use-*.ts          state hooks (report, history, finance picker, account/transfer management)
@@ -54,7 +53,7 @@ from the unauthenticated auth bootstrap routes.
 | Area        | Routes                                                                                                                                                       |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Health      | `GET /health`                                                                                                                                                |
-| Auth        | `POST /v1/auth/register`, `/login`, `/refresh`, `/google/challenges`, `/google`, `/google/link`, `/reauthenticate`, `/logout` (`allSessions` flag); `GET /v1/me` |
+| Auth        | `POST /v1/auth/register`, `/login`, `/google/challenges`, `/google`, `/logout` (`allSessions` flag); `GET /v1/me`                                          |
 | Preferences | `GET`, `PATCH /v1/preferences` (permanent `entryCurrency`, `defaultAccountId`, derived `hasActiveAccounts`)                                                  |
 | Accounts    | `GET /v1/accounts`, `GET /v1/accounts/:id` (balance `asOf`), `POST /v1/accounts`, `PATCH /v1/accounts/:id`, `POST /v1/accounts/:id/archive`                |
 | Categories  | `GET /v1/categories`, `/recent`, `/last-used`, `/:id`; `POST /v1/categories`; `PATCH /:id`; `POST /:id/archive`                                              |
@@ -86,9 +85,8 @@ Supported currencies (`currencySchema`): CAD, USD, EUR, GBP, INR, JPY, KWD.
 
 | Model                                                    | Notes                                                                                                                                                                                |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `User`                                                   | Email is unique. `passwordHash` is nullable for Google-only users. `disabledAt` is set for disabled users.                                                                           |
-| `AuthIdentity`                                           | Google `sub`, unique per (provider, subject) and per (user, provider).                                                                                                               |
-| `Session` / `RefreshToken` / `AuthChallenge`             | One session per device login. Refresh tokens are stored as SHA-256 hashes and rotate. A null `expiresAt` means a persistent native session. Challenges are one-time Google nonces.    |
+| `User`                                                   | Email is unique. `passwordHash` is nullable for Google-only users. `googleSubject` (unique) is the verified Google `sub`. `disabledAt` blocks every session.                         |
+| `Session`                                                | One signed-in device: `userId`, unique SHA-256 `tokenHash`, `createdAt`. No expiry; logout deletes the row. Google nonces are stateless HMAC values, not rows.                      |
 | `FinancePreferences`                                     | `entryCurrency` is null until chosen and then immutable (enforced by an SQL trigger). Optional default account.                                                                     |
 | `Account`                                                | Owned. Type is cash, bank, credit, or other. `currency` is immutable. `openingBalanceMinor` is fixed after creation. `openingDate` is editable up to the earliest posting. Archived via `archivedAt`. |
 | `Category`                                               | One table. `userId = null` plus a `defaultKey` marks the shared immutable catalog (80 rows). Rows with an owner are personal. Exactly two levels.                                    |
@@ -120,8 +118,10 @@ write. The category catalog initializer uses `pg_advisory_xact_lock`.
   demo shares UI code but makes no network calls.
 - **Transport and auth:** `auth/transport.ts` validates every response with Zod
   and maps failures to a fixed `ClientFailure` kind, so raw errors never reach
-  the UI. `session-controller.ts` handles single-flight refresh, at most one
-  retry, and ambiguous-refresh recovery. Tokens are stored in SecureStore only.
+  the UI. `session-controller.ts` restores the stored device token, verifies it
+  with `/v1/me`, and signs out on any 401 (no refresh, no replay). Epochs discard
+  stale responses after logout or account switch. The token is stored in
+  SecureStore only.
   Web supports the demo only, because the API URL and SecureStore are disabled
   there.
 - **Google Sign-In:** `google.native.ts` lazily loads
