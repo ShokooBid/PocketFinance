@@ -1,4 +1,10 @@
-import { useState, type PropsWithChildren, type ReactNode } from "react";
+import {
+  useState,
+  type ComponentRef,
+  type PropsWithChildren,
+  type ReactNode,
+  type Ref
+} from "react";
 import { Link, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -172,6 +178,7 @@ export function Screen({
   backAction,
   showUserMenu = true,
   onViewportLayout,
+  scrollRef,
   appearance = "standard"
 }: PropsWithChildren<{
   title: string;
@@ -179,6 +186,7 @@ export function Screen({
   backAction?: { label: string; onPress: () => void };
   showUserMenu?: boolean;
   onViewportLayout?: (layout: { width: number; height: number }) => void;
+  scrollRef?: Ref<ComponentRef<typeof ScrollView>>;
   appearance?: "standard" | "welcome" | "entry" | "history" | "overview";
 }>) {
   const router = useRouter();
@@ -198,6 +206,7 @@ export function Screen({
       }
     >
       <ScrollView
+        ref={scrollRef}
         onLayout={(event) => onViewportLayout?.(event.nativeEvent.layout)}
         contentContainerStyle={[
           styles.content,

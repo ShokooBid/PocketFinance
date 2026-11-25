@@ -4,7 +4,8 @@ import {
   fireEvent,
   render,
   screen,
-  waitFor
+  waitFor,
+  within
 } from "@testing-library/react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useState } from "react";
@@ -36,6 +37,9 @@ async function press(name: string) {
   await act(async () => {
     fireEvent.press(screen.getByRole("button", { name }));
   });
+}
+function openCurrencies() {
+  fireEvent.press(screen.getByRole("combobox", { name: "Currency" }));
 }
 async function login(user = alice) {
   const h = harness();
@@ -155,12 +159,23 @@ describe("permanent currency UI and provider", () => {
     await act(async () => pending.resolve(response(empty)));
     await screen.findByRole("button", { name: "Confirm CAD permanently" });
     expect(
-      screen.getByRole("button", {
-        name: "Choose currency CAD",
-        selected: true
-      })
+      screen.getByRole("combobox", { name: "Currency", expanded: false })
+    ).toHaveAccessibilityValue({ text: "CAD" });
+    expect(screen.queryByLabelText("Supported currencies")).toBeNull();
+    openCurrencies();
+    const options = within(screen.getByLabelText("Supported currencies"));
+    expect(
+      options.getByRole("button", { name: "CAD", selected: true })
     ).toBeVisible();
-    await press("Choose currency KWD");
+    expect(options.getAllByRole("button")).toHaveLength(7);
+    for (const currency of ["CAD", "USD", "EUR", "GBP", "INR", "JPY", "KWD"]) {
+      expect(options.getByText(currency)).toHaveStyle({ fontWeight: "700" });
+    }
+    await press("KWD");
+    expect(screen.queryByLabelText("Supported currencies")).toBeNull();
+    expect(
+      screen.getByRole("combobox", { name: "Currency" })
+    ).toHaveAccessibilityValue({ text: "KWD" });
     expect(
       h.fetcher.mock.calls.filter((c) => c[1]?.method === "PATCH")
     ).toHaveLength(0);
@@ -169,9 +184,7 @@ describe("permanent currency UI and provider", () => {
     expect(
       h.fetcher.mock.calls.filter((c) => c[1]?.method === "PATCH")
     ).toHaveLength(1);
-    expect(
-      screen.queryByRole("button", { name: /Choose currency/ })
-    ).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Currency" })).toBeNull();
     view.unmount();
     render(<Fixture />);
     expect(await screen.findByText("Default currency: KWD")).toBeVisible();
@@ -186,9 +199,7 @@ describe("permanent currency UI and provider", () => {
     h.fetcher.mockReturnValueOnce(pending.promise);
     await press("Confirm CAD permanently");
     await press("Confirm CAD permanently");
-    expect(
-      screen.getByRole("button", { name: "Choose currency USD" })
-    ).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Currency" })).toBeDisabled();
     expect(
       h.fetcher.mock.calls.filter((c) => c[1]?.method === "PATCH")
     ).toHaveLength(1);
@@ -203,7 +214,8 @@ describe("permanent currency UI and provider", () => {
     h.fetcher.mockResolvedValue(response(empty));
     render(<Fixture />);
     await screen.findByRole("button", { name: "Confirm CAD permanently" });
-    await press("Choose currency USD");
+    openCurrencies();
+    await press("USD");
     h.fetcher.mockRejectedValueOnce(new Error("private response data"));
     await press("Confirm USD permanently");
     expect(
@@ -213,9 +225,7 @@ describe("permanent currency UI and provider", () => {
     h.fetcher.mockResolvedValue(response({ ...empty, entryCurrency: "USD" }));
     await press("Reload saved currency");
     expect(await screen.findByText("Default currency: USD")).toBeVisible();
-    expect(
-      screen.queryByRole("button", { name: /Choose currency/ })
-    ).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Currency" })).toBeNull();
   });
 
   it("keeps initialized draft components mounted on a failed refresh", async () => {
@@ -306,7 +316,8 @@ describe("permanent currency UI and provider", () => {
     });
     const view = render(<Fixture demo />);
     await screen.findByRole("button", { name: "Confirm CAD permanently" });
-    await press("Choose currency EUR");
+    openCurrencies();
+    await press("EUR");
     await press("Confirm EUR permanently");
     await press("Create demo account");
     await waitFor(() => expect(preferences.hasActiveAccounts).toBe(true));

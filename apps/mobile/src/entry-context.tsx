@@ -597,6 +597,12 @@ function useEntryState() {
         currency: selected.currency
       });
     },
+    clearDestination(rows: Account[]) {
+      if (locked.current || pending.current || draft.direction !== "transfer")
+        return;
+      setAccounts(rows);
+      change({ toAccountId: "" });
+    },
     selectCategory(id: string, rows: Category[]) {
       setCategories(rows);
       const row = rows.find((item) => item.id === id);

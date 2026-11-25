@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Body, Button, Field, StateNotice } from "./ui";
 import { amountText } from "./transaction-data";
@@ -16,17 +17,29 @@ export function AccountManagement(
   props: AccountManagementProps & {
     createInline?: boolean;
     onOpenHistory?: (id: string) => void;
+    onRevealEditForm?: () => void;
   }
 ) {
   const { currency, defaultAccountId, createInline = false } = props;
   const state = useAccountManagement(props, createInline);
   const { archiving, busy, disabled, rows } = state;
+  const editScrollPending = useRef(false);
+  const errorScrollPending = useRef(false);
+  function revealEditForm() {
+    if (!editScrollPending.current) return;
+    editScrollPending.current = false;
+    props.onRevealEditForm?.();
+  }
   const accounts = [
     ...rows.filter((row) => !row.archivedAt),
     ...rows.filter((row) => row.archivedAt)
   ];
   const form = (state.creating || state.editing) && (
-    <View style={styles.card}>
+    <View
+      key={state.editing?.id ?? "new"}
+      style={styles.card}
+      onLayout={state.editing ? revealEditForm : undefined}
+    >
       <View style={styles.formHeading}>
         <Text accessibilityRole="header" style={styles.heading}>
           {state.editing ? "Edit account" : "Add account"}
@@ -64,7 +77,6 @@ export function AccountManagement(
         />
       )}
       <SingleDateField
-        key={state.editing?.id ?? "new"}
         label="Opening date"
         accessibilityLabel="Choose account opening date"
         help={
@@ -80,7 +92,10 @@ export function AccountManagement(
         label={state.editing ? "Save account changes" : "Create account"}
         variant="primary"
         disabled={disabled}
-        onPress={() => void state.action("save")}
+        onPress={() => {
+          errorScrollPending.current = !!state.editing;
+          void state.action("save");
+        }}
       />
       {(state.editing || !createInline) && (
         <Button
@@ -88,6 +103,21 @@ export function AccountManagement(
           disabled={busy}
           onPress={state.closePanel}
         />
+      )}
+      {state.editError && (
+        <View
+          onLayout={() => {
+            if (!errorScrollPending.current) return;
+            errorScrollPending.current = false;
+            props.onRevealEditForm?.();
+          }}
+        >
+          <StateNotice
+            kind="error"
+            title="Account changes could not be saved"
+            message={state.editError}
+          />
+        </View>
       )}
     </View>
   );
@@ -147,7 +177,11 @@ export function AccountManagement(
             viewDisabled={state.selectedId !== row.id && (busy || !state.ready)}
             defaultEligible={row.currency === currency}
             onToggleDetails={() => state.toggleDetails(row)}
-            onEdit={() => state.edit(row)}
+            onEdit={() => {
+              editScrollPending.current = true;
+              state.edit(row);
+              if (state.editing?.id === row.id) revealEditForm();
+            }}
             onDefault={() => void state.action("default", row)}
             onArchive={() => state.startArchiving(row)}
           >

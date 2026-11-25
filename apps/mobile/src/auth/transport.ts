@@ -161,6 +161,7 @@ export function createTransport(
                 data.error.code === "CURRENCY_MISMATCH" ||
                 data.error.code === "ACCOUNT_NAME_CONFLICT" ||
                 data.error.code === "ACCOUNT_ARCHIVED" ||
+                data.error.code === "OPENING_DATE_AFTER_ACTIVITY" ||
                 data.error.code === "INVALID_ACCOUNT" ||
                 data.error.code === "INVALID_TRANSFER" ||
                 data.error.code === "PREFERENCE_CHANGED" ||

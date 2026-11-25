@@ -496,9 +496,15 @@ export function TransactionEntry() {
             {...(excludedAccountId ? { excludeId: excludedAccountId } : {})}
             alignEnd={choosingDestination}
             onClose={closeAccountDropdown}
-            onSelect={(id, rows) =>
-              entry.selectAccount(id, rows, choosingDestination ? "to" : "from")
-            }
+            onSelect={(id, rows) => {
+              if (choosingDestination && !id) entry.clearDestination(rows);
+              else
+                entry.selectAccount(
+                  id,
+                  rows,
+                  choosingDestination ? "to" : "from"
+                );
+            }}
           />
         )}
         <SingleDateField
@@ -541,10 +547,7 @@ export function TransactionEntry() {
                 ? `Transfers need two active accounts in ${entry.draft.currency}.`
                 : `Transactions need an active account in ${entry.draft.currency}.`}
             </Body>
-            <Button
-              label="Open Accounts to add an account"
-              onPress={openAccounts}
-            />
+            <Button label="Add a new Account" onPress={openAccounts} />
           </>
         )}
         {(entry.editingTransfer || entry.editingTransaction) && (

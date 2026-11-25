@@ -1,6 +1,7 @@
 import { AccountManagement } from "../../account-management";
 import { useAccounts, useFinanceChanges } from "../../transaction-context";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState, type ComponentRef } from "react";
+import type { ScrollView } from "react-native";
 import { useSession } from "../../session";
 import { Body, Button, Screen, StateNotice } from "../../ui";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -19,6 +20,7 @@ export default function AccountsScreen() {
   const accounts = useAccounts();
   const changes = useFinanceChanges();
   const [active, setActive] = useState(false);
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const { returnTo } = useLocalSearchParams();
   const returningToDraft = returnTo === "transaction-draft";
   const { reload, status, saving, error } = currencyState;
@@ -32,6 +34,7 @@ export default function AccountsScreen() {
   return (
     <Screen
       title="Accounts"
+      scrollRef={scrollRef}
       {...(returningToDraft
         ? {
             backAction: {
@@ -61,6 +64,7 @@ export default function AccountsScreen() {
         <AccountManagement
           source={accounts}
           changes={changes}
+          onRevealEditForm={() => scrollRef.current?.scrollToEnd()}
           {...(session.status === "authenticated"
             ? {
                 onOpenHistory: (accountId: string) =>
