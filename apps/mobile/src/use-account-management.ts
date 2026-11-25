@@ -33,7 +33,7 @@ function actionMessage(failure: unknown) {
     if (failure.code === "ACCOUNT_ARCHIVED")
       return "This account was archived. Its history is preserved.";
     if (failure.code === "OPENING_DATE_AFTER_ACTIVITY")
-      return "Choose an opening date on or before this account's earliest transaction or transfer.";
+      return "This account already has a transaction or transfer before the selected opening date. Choose a date on or before its earliest transaction or transfer.";
     if (failure.kind === "unavailable")
       return "This account is unavailable. Review your accounts before continuing.";
     if (failure.code === "INVALID_ACCOUNT")
@@ -73,6 +73,7 @@ export function useAccountManagement(
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [uncertain, setUncertain] = useState(false);
   const [reviewed, setReviewed] = useState(false);
@@ -193,6 +194,7 @@ export function useAccountManagement(
     setType("bank");
     setOpening("");
     setDate(localDate());
+    setEditError(null);
   }
 
   function resetPanel() {
@@ -225,18 +227,20 @@ export function useAccountManagement(
       )
         throw new ClientFailure("validation", "INVALID_ACCOUNT");
     } catch (failure) {
-      setError(
-        operation !== "save"
-          ? actionMessage(failure)
-          : editing
-            ? "Check the account name and opening date."
-            : "Check the account name, signed opening amount and calendar date."
-      );
+      if (operation === "save" && editing)
+        setEditError("Check the account name and opening date.");
+      else
+        setError(
+          operation === "save"
+            ? "Check the account name, signed opening amount and calendar date."
+            : actionMessage(failure)
+        );
       return;
     }
     lock.current = true;
     setBusy(true);
     setError(null);
+    if (operation === "save") setEditError(null);
     setNotice(null);
     let confirmed = false;
     try {
@@ -279,8 +283,11 @@ export function useAccountManagement(
           );
           setRefreshRequested(true);
         } else {
-          setError(actionMessage(failure));
-          if (uncertainWrite(failure)) {
+          const unconfirmed = uncertainWrite(failure);
+          if (operation === "save" && editing && !unconfirmed)
+            setEditError(actionMessage(failure));
+          else setError(actionMessage(failure));
+          if (unconfirmed) {
             setUncertain(true);
             setReviewed(false);
             setRefreshRequested(true);
@@ -312,6 +319,7 @@ export function useAccountManagement(
     busy,
     ready,
     error,
+    editError,
     notice,
     uncertain,
     reviewed,
@@ -331,6 +339,7 @@ export function useAccountManagement(
       setType(row.type);
       setDate(row.openingDate);
       setError(null);
+      setEditError(null);
     },
     startArchiving(row: Account) {
       setPanel({ kind: "archive", account: row });

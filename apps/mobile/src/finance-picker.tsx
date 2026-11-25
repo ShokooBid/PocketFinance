@@ -580,12 +580,17 @@ export function EntryAccountDropdown({
     },
     excludeId
   );
-  const options: DropdownOption<string>[] = state.matches.map((row) => ({
-    value: row.id,
-    label: `${row.name} · ${row.currency}`,
-    leading: <AccountIcon name={row.type} active />,
-    emphasized: true
-  }));
+  const options: DropdownOption<string>[] = [
+    ...(excludeId && selectedId
+      ? [{ value: "", label: "Clear selection" }]
+      : []),
+    ...state.matches.map((row) => ({
+      value: row.id,
+      label: `${row.name} · ${row.currency}`,
+      leading: <AccountIcon name={row.type} active />,
+      emphasized: true
+    }))
+  ];
   return (
     <Dropdown
       label={label}
@@ -593,7 +598,12 @@ export function EntryAccountDropdown({
       selected={selectedId}
       disabled={state.busy}
       style={alignEnd && styles.dropdownEnd}
-      onSelect={(id) => void state.select(id)}
+      onSelect={(id) => {
+        if (!id) {
+          onSelect("", state.rows ?? []);
+          onClose();
+        } else void state.select(id);
+      }}
       onClose={onClose}
     >
       {(state.available.length > 6 || state.query !== "") && (

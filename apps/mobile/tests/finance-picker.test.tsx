@@ -516,7 +516,7 @@ describe("entry account dropdown", () => {
     expect(screen.getByText("No compatible accounts")).toBeVisible();
     expect(screen.getByText(/This account is no longer active/)).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: "Open Accounts to add an account" })
+      screen.queryByRole("button", { name: "Add a new Account" })
     ).toBeNull();
   });
 

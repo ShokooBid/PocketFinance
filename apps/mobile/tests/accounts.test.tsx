@@ -49,6 +49,23 @@ it("uses canonical account paths and rejects nonadvancing pagination", async () 
   expect(fetcher.mock.calls[0]?.[0]).toContain("/v1/accounts?");
 });
 
+it("preserves the API opening-date rejection code for the edit form", async () => {
+  const fetcher = jest
+    .fn<FetchRequest>()
+    .mockResolvedValue(
+      response({ error: { code: "OPENING_DATE_AFTER_ACTIVITY" } }, 409)
+    );
+  const source = createApiAccountSource(
+    createTransport("https://api.example.invalid", fetcher)
+  );
+  await expect(
+    source.update(accountId(), { openingDate: "2024-02-02" })
+  ).rejects.toMatchObject({
+    kind: "conflict",
+    code: "OPENING_DATE_AFTER_ACTIVITY"
+  });
+});
+
 it("creates a named account, selects its default and confirms archival while preserving its baseline", async () => {
   const row = (await accounts.list()).find(
     (row) => row.id === accountId("CAD")
@@ -200,11 +217,13 @@ it("edits the opening date without crossing an existing transaction or changing 
     openingDate: "2024-01-01",
     openingBalanceMinor: -1234
   });
+  const revealEditForm = jest.fn();
   const props = {
     source,
     currency: "CAD" as const,
     defaultAccountId: null,
-    onDefault: async () => {}
+    onDefault: async () => {},
+    onRevealEditForm: revealEditForm
   };
   const view = render(<AccountManagement {...props} />);
   await screen.findByRole("header", { name: "BMO Chequing" });
@@ -240,6 +259,9 @@ it("edits the opening date without crossing an existing transaction or changing 
   view.rerender(<AccountManagement {...props} active />);
   await screen.findByText(/Tracked balance as of .*: -13.34 CAD/);
   await press("Edit BMO Chequing");
+  expect(revealEditForm).not.toHaveBeenCalled();
+  fireEvent(screen.getByRole("header", { name: "Edit account" }), "layout");
+  expect(revealEditForm).toHaveBeenCalledTimes(1);
   expect(screen.queryByLabelText("Opening balance (optional)")).toBeNull();
   expect(
     screen.getByRole("button", { name: "Choose account opening date" })
@@ -249,18 +271,30 @@ it("edits the opening date without crossing an existing transaction or changing 
   fireEvent.press(screen.getByRole("radio", { name: "Cash" }));
   await chooseAccountOpeningDate("2024-02-02");
   await press("Save account changes");
-  expect(screen.getByText(/earliest transaction or transfer/)).toBeVisible();
+  const error = screen.getByRole("alert", {
+    name: /Account changes could not be saved.*transaction or transfer before the selected opening date/
+  });
+  expect(error).toBeVisible();
+  fireEvent(error, "layout");
+  expect(revealEditForm).toHaveBeenCalledTimes(2);
   expect((await source.get(row.id)).openingDate).toBe("2024-01-01");
   expect(screen.getByLabelText("Account name")).toHaveProp(
     "value",
     "BMO Savings"
   );
+  expect(
+    screen.getByRole("combobox", { name: "Account type" })
+  ).toHaveAccessibilityValue({ text: "Cash" });
+  expect(
+    screen.getByRole("button", { name: "Choose account opening date" })
+  ).toHaveProp("accessibilityHint", "2024-02-02");
   await chooseAccountOpeningDate("2024-02-01");
   await press("Save account changes");
   expect(
     await screen.findByRole("header", { name: "BMO Savings" })
   ).toBeVisible();
   expect(screen.getByText("Cash · CAD · Active")).toBeVisible();
+  expect(screen.queryByRole("alert")).toBeNull();
   expect(await source.get(row.id)).toMatchObject({
     openingDate: "2024-02-01",
     openingBalanceMinor: -1234,
