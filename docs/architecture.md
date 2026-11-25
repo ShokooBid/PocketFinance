@@ -224,7 +224,8 @@ and [verification record](mobile-redesign/verification.md#issue-117-overview-rep
 
 ## AI and automation boundary
 
-Functional AI remains a later increment. Inert entry points are in the redesign;
+Functional AI remains a later increment. The redesign reserves inert text, voice
+and receipt entry points (#76), but none is implemented in the mobile app yet;
 later CSV/PDF statement processing binds drafts to a selected owned account.
 Upload/extraction never posts transactions. If added later, any model- or tool-derived category,
 transaction, receipt extraction, voice interpretation, or insight is a draft.

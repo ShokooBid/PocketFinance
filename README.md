@@ -25,8 +25,8 @@ placeholder. Use synthetic data when evaluating the app.
   direction, and currency.
 - Move money between two owned accounts with a same-currency transfer; review,
   edit, or delete the transfer as one record.
-- Review date-grouped History and expandable Income/Expenses reports, including
-  category totals and changes against the preceding period.
+- Review date-grouped History and expandable Income/Expenses reports with
+  category totals for the selected date range.
 - Explore categories, transactions, and summaries in a temporary in-memory demo.
 
 ## Try the demo

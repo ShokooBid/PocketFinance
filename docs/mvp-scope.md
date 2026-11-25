@@ -9,7 +9,7 @@ Accepted target, amended on 2026-10-30 by
 behavior, not features already implemented. The manual redesign and subsequent
 statement-import increments have separate acceptance/release gates.
 The [root README](../README.md) describes current capabilities. Overview Reports
-is implemented in the #117 working branch; Charts remains unavailable. Local
+is implemented (#117, merged in PR #118); Charts remains unavailable. Local
 verification is recorded [separately](mobile-redesign/verification.md#issue-117-overview-reports-2026-11-17)
 and does not establish device or release acceptance.
 
@@ -112,7 +112,8 @@ tracking and statement import are useful, understandable, and dependable.
   explicit resolution. Statement summaries/balances are not transaction rows.
 - These increments do not block release acceptance for the manual redesign.
   CSV remains part of the original full MVP/beta target; PDF is a separate later
-  release. Inert AI shortcuts are included now; functional AI remains later work.
+  release. Inert AI entry points (#76) are planned but not yet implemented in the app;
+  functional AI remains later work.
 
 ### Engineering quality
 

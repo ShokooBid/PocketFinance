@@ -122,7 +122,7 @@ than assumptions taken from the supplied design images.
 | Amount entry         | Custom keypad with digits, decimal, backspace and confirm. Confirm validates all fields and saves the transaction. No addition/subtraction or arithmetic operators.     |
 | Opening balance      | Optional at creation, defaults to zero, and stays fixed for tracked balance calculations.                                                                               |
 | Statements           | Select a specific account for CSV/PDF uploads; keep that account visible through review and confirmation. Processing arrives in later issues.                           |
-| AI                   | Reserve text/voice/receipt entry points now; functionality arrives later and requires editable drafts plus explicit confirmation.                                       |
+| AI                   | Reserve text/voice/receipt entry points (#76, not yet implemented); functionality arrives later and requires editable drafts plus explicit confirmation.                |
 
 ## Final answers and their consequences
 
@@ -157,7 +157,7 @@ flow exists. Demo uses the same setup rules in isolated session memory.
 | Entry home, custom keypad and navigation                             | [#72](https://github.com/ShokooBid/PocketFinance/issues/72)                                                                                                                           |
 | Atomic transfers and transfer UI                                     | [#73](https://github.com/ShokooBid/PocketFinance/issues/73), [#74](https://github.com/ShokooBid/PocketFinance/issues/74)                                                              |
 | Logical history, account filters and category rollups                | [#75](https://github.com/ShokooBid/PocketFinance/issues/75)                                                                                                                           |
-| Overview Reports, shared range filtering and period comparisons      | [#117](https://github.com/ShokooBid/PocketFinance/issues/117), building on the date-picker changes in [#116](https://github.com/ShokooBid/PocketFinance/pull/116)                     |
+| Overview Reports and shared range filtering (comparisons removed)    | [#117](https://github.com/ShokooBid/PocketFinance/issues/117), building on the date-picker changes in [#116](https://github.com/ShokooBid/PocketFinance/pull/116)                     |
 | Inert AI entry points                                                | [#76](https://github.com/ShokooBid/PocketFinance/issues/76)                                                                                                                           |
 | End-to-end/device acceptance                                         | [#77](https://github.com/ShokooBid/PocketFinance/issues/77)                                                                                                                           |
 | Later account-bound review, CSV and PDF processing                   | [#78](https://github.com/ShokooBid/PocketFinance/issues/78), [#79](https://github.com/ShokooBid/PocketFinance/issues/79), [#80](https://github.com/ShokooBid/PocketFinance/issues/80) |
