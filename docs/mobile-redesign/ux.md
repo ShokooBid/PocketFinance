@@ -113,7 +113,8 @@ example labels in the reference image.
 ## Accounts and currency
 
 Currency is chosen once immediately after sign-in, before account setup or
-finance access. The selection form suggests CAD without saving it, explains
+finance access. The selection form uses one **Currency** dropdown (combobox)
+listing the supported currencies, suggests CAD without saving it, explains
 permanence and requires explicit confirmation. Confirmation fixes the currency
 before the first account or posting.
 Same-value retries succeed; uncertain responses disable further changes until a
@@ -170,12 +171,16 @@ accounts can edit the date up to and including their earliest transaction or
 transfer. With no activity, any valid opening date is allowed. Account details
 show currency, tracked balance, opening date and balance, and the archive date
 when applicable. A default account must be owned, active and compatible.
-Archiving the default clears the selection.
+Archiving the default clears the selection. Choosing Edit scrolls the account
+form into view; a failed save, such as an opening date after the earliest
+activity (`OPENING_DATE_AFTER_ACTIVITY`), shows an inline "Account changes could
+not be saved" notice, keeps the edit and scrolls the notice into view.
 
 ## Transfer entry
 
 Transfer mode replaces the normal category/account selection with **From account**
-and **To account**. Users can change the destination by selecting another account.
+and **To account**. Users can change the destination by selecting another account,
+or choose **Clear selection** in the destination picker to remove it.
 Require different active owned accounts in the same configured
 currency, a positive amount, calendar date and optional note. No category,
 merchant or foreign-exchange control is shown.
