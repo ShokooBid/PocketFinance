@@ -58,19 +58,19 @@ change needs an issue and a doc update, as
 
 ## Auth and security
 
-- **Email/password plus Google.** Both produce PocketFinance-owned sessions.
-  Passwords use Argon2 (`argon2`). Access tokens are short-lived JWTs (`jose`,
-  15 minutes by default) signed with `ACCESS_TOKEN_SECRET`. Refresh tokens are
-  random, stored as SHA-256 hashes, and rotate on every use. Reusing one
-  revokes the session family. Source: authentication-plan.md.
-- **Google identity is keyed by `sub`, never by email.** Accounts with matching
-  emails are never auto-linked. Linking needs recent reauthentication plus fresh
-  Google proof. Nonce challenges are one-time and stored server-side.
-- **Persistent native sessions (#123).** Clients opt in with the header
-  `X-PocketFinance-Session-Policy: persistent`. Older clients keep 30-day
-  absolute and 7-day idle limits.
-- **Mobile secrets live only in SecureStore.** An ambiguous refresh forces
-  sign-in instead of blindly replaying a token.
+- **Email/password plus Google, one opaque session per device (simplified
+  2026-11-25).** Passwords use Argon2 (`argon2`). Sign-in returns a random
+  256-bit token stored only as a SHA-256 hash in `Session`; it stays valid until
+  logout (this device or all devices) or the user is disabled. There are no JWTs,
+  refresh tokens, rotation or expiry: the product requirement is "signed in until
+  sign-out". Accepted trade-off: no stolen-token reuse detection. Source:
+  authentication-plan.md "Why the design was simplified".
+- **Google identity is keyed by `sub`, never by email.** `User.googleSubject`
+  holds it. Accounts with matching emails are never merged, and there is no
+  linking flow. Nonces are stateless HMAC values (`ACCESS_TOKEN_SECRET`) bounded
+  by `CHALLENGE_TTL_SECONDS`, not single-use rows.
+- **Mobile secrets live only in SecureStore.** Any 401 signs the device out;
+  requests are never replayed.
 - **Logging is allowlist-only and errors are generic.** Detailed diagnostics
   appear in development only. Source: DEVELOPMENT.md "Backend errors while
   testing with Expo".

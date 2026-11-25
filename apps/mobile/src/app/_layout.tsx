@@ -29,13 +29,9 @@ export function SessionNavigation() {
           kind="error"
           title="Cannot restore your session"
           message={failureMessage(new ClientFailure(session.reason))}
-          {...(session.reason === "ambiguous"
-            ? {}
-            : {
-                onRetry: () => {
-                  void controller.restore();
-                }
-              })}
+          onRetry={() => {
+            void controller.restore();
+          }}
         />
         <Button
           label="Clear session and return to sign in"
@@ -54,8 +50,10 @@ export function SessionNavigation() {
         contentStyle: { backgroundColor: theme.color.background }
       }}
     >
+      {/* sign-in stays first: signed-out deep links redirect to it. */}
       <Stack.Protected guard={session.status === "signed-out"}>
         <Stack.Screen name="sign-in" />
+        <Stack.Screen name="sign-up" />
       </Stack.Protected>
       <Stack.Protected
         guard={session.status === "authenticated" || session.status === "demo"}

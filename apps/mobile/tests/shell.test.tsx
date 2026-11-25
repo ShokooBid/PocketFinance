@@ -28,10 +28,10 @@ import * as runtime from "../src/auth/runtime";
 import {
   alice,
   bob,
+  credentials,
   deferred,
   harness,
-  response,
-  stored
+  response
 } from "./auth-fixtures";
 
 let shell: Awaited<ReturnType<typeof renderRouter>>;
@@ -651,7 +651,7 @@ describe("session navigation", () => {
       if (path === "/v1/auth/login") {
         const body = JSON.parse(String(options?.body)) as { email: string };
         owner = body.email === bob.email ? bob : alice;
-        return response(stored(owner.id).credentials);
+        return response(credentials(owner.id));
       }
       if (path === "/v1/me") return response(owner);
       if (path === "/v1/preferences")
@@ -792,8 +792,8 @@ describe("session navigation", () => {
     ).toBeDisabled();
     expect(shell.getPathname()).toBe("/sign-in");
     expect(
-      screen.getByRole("button", { name: "Continue with Google" })
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: "Continue with Google" })
+    ).toBeNull();
     expect(shell.getPathname()).toBe("/sign-in");
   });
 
@@ -807,6 +807,57 @@ describe("session navigation", () => {
       ).toBeVisible();
     }
   );
+
+  it("switches between sign-in and create account without stacking history", async () => {
+    await openShell("/sign-up");
+    expect(
+      screen.getByRole("header", { name: "Create account screen" })
+    ).toBeVisible();
+    await tap(screen.getByRole("link", { name: "Go to sign in" }));
+    expect(shell.getPathname()).toBe("/sign-in");
+    expect(router.canGoBack()).toBe(false);
+    await tap(screen.getByRole("link", { name: "Go to create account" }));
+    expect(shell.getPathname()).toBe("/sign-up");
+    expect(router.canGoBack()).toBe(false);
+  });
+
+  it("registers from create account and continues to currency setup", async () => {
+    const originalUrl = process.env.EXPO_PUBLIC_API_URL;
+    process.env.EXPO_PUBLIC_API_URL = "https://api.example.invalid";
+    const h = harness(null);
+    jest.mocked(runtime.createRuntimeSession).mockReturnValue(h.controller);
+    h.fetcher.mockImplementation(async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/v1/auth/register") return response(credentials(), 201);
+      if (path === "/v1/me") return response(alice);
+      if (path === "/v1/preferences")
+        return response({
+          entryCurrency: null,
+          hasActiveAccounts: false,
+          defaultAccountId: null
+        });
+      return response({ items: [], nextCursor: null });
+    });
+    try {
+      await openShell("/sign-up");
+      await field("Email address", alice.email);
+      await field("Password", "synthetic password");
+      await press("Create account with email");
+      expect(
+        await screen.findByRole("header", {
+          name: "Choose your currency screen"
+        })
+      ).toBeVisible();
+      expect(
+        h.fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)
+      ).toContain("/v1/auth/register");
+      await navigate(() => router.push("/sign-up"));
+      expect(shell.getPathname()).not.toBe("/sign-up");
+    } finally {
+      if (originalUrl === undefined) delete process.env.EXPO_PUBLIC_API_URL;
+      else process.env.EXPO_PUBLIC_API_URL = originalUrl;
+    }
+  });
 
   it("enters the demo explicitly and removes protected history on exit", async () => {
     await openShell();

@@ -23,13 +23,12 @@ tracking and statement import are useful, understandable, and dependable.
 
 ### Identity and privacy
 
-- Register, sign in, refresh a session, and sign out from the avatar menu.
-- Support email/password and Google sign-in, with persistent mobile sessions
-  across app restarts. Google-only accounts do not require a PocketFinance password.
-- The API supports explicitly linking Google to an existing account after proving
-  both identities. Matching email addresses alone never merge accounts.
-- Restore sessions from secure storage, rotate refresh tokens, and revoke the
-  current session on logout. Expired/revoked sessions require sign-in again.
+- Register, sign in, and sign out from the avatar menu.
+- Support email/password and Google sign-in. A device stays signed in across app
+  restarts until sign-out. Google-only accounts do not require a PocketFinance
+  password. Matching email addresses never merge accounts.
+- Restore sessions from secure storage and revoke the current session on logout.
+  Revoked sessions require sign-in again.
 - Isolate each user's records. A user can only create, read, update, archive, or
   delete their own data.
 - Explain that PocketFinance does not connect to a bank in the MVP.

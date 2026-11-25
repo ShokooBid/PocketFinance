@@ -8,6 +8,7 @@ const environmentSchema = z.object({
   HOST: z.string().default("127.0.0.1"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   DATABASE_URL: z.url().refine((value) => /^postgres(ql)?:/.test(value)),
+  // HMAC key for Google sign-in nonces. Name kept for deployment compatibility.
   ACCESS_TOKEN_SECRET: z
     .string()
     .min(43)
@@ -17,13 +18,7 @@ const environmentSchema = z.object({
         Buffer.from(value, "base64url").length >= 32
       );
     }),
-  ACCESS_TOKEN_ISSUER: z.string().min(1).default("pocketfinance-api"),
-  ACCESS_TOKEN_AUDIENCE: z.string().min(1).default("pocketfinance-mobile"),
-  ACCESS_TTL_SECONDS: seconds.default(900),
-  SESSION_TTL_SECONDS: seconds.default(2_592_000),
-  SESSION_IDLE_SECONDS: seconds.default(604_800),
   CHALLENGE_TTL_SECONDS: seconds.max(600).default(300),
-  REAUTH_TTL_SECONDS: seconds.max(900).default(300),
   GOOGLE_CLIENT_IDS: z.string().default(""),
   GOOGLE_PRESENTER_IDS: z.string().default(""),
   CORS_ORIGINS: z.string().default("")
@@ -65,16 +60,10 @@ export function readConfig(environment: Record<string, string | undefined>) {
     host: value.HOST,
     port: value.PORT,
     databaseUrl: value.DATABASE_URL,
-    tokenKey: new Uint8Array(
+    nonceKey: new Uint8Array(
       Buffer.from(value.ACCESS_TOKEN_SECRET, "base64url")
     ),
-    issuer: value.ACCESS_TOKEN_ISSUER,
-    audience: value.ACCESS_TOKEN_AUDIENCE,
-    accessSeconds: value.ACCESS_TTL_SECONDS,
-    sessionSeconds: value.SESSION_TTL_SECONDS,
-    idleSeconds: value.SESSION_IDLE_SECONDS,
     challengeSeconds: value.CHALLENGE_TTL_SECONDS,
-    reauthSeconds: value.REAUTH_TTL_SECONDS,
     googleAudiences: split(value.GOOGLE_CLIENT_IDS),
     googlePresenters: split(value.GOOGLE_PRESENTER_IDS),
     origins

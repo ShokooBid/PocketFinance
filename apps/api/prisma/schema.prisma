@@ -20,10 +20,6 @@ enum ImportStatus {
   failed
 }
 
-enum AuthProvider {
-  google
-}
-
 enum AccountType {
   cash
   bank
@@ -36,6 +32,8 @@ model User {
   email              String              @unique @db.VarChar(254)
   // Null for Google-only accounts; never invent a password for social login.
   passwordHash       String?             @db.Text
+  // Google's verified, case-sensitive `sub`; never an email or client value.
+  googleSubject      String?             @unique @db.VarChar(255)
   emailVerifiedAt    DateTime?           @db.Timestamptz(3)
   disabledAt         DateTime?           @db.Timestamptz(3)
   createdAt          DateTime            @default(now()) @db.Timestamptz(3)
@@ -43,7 +41,6 @@ model User {
   categories         Category[]
   transactions       Transaction[]
   imports            Import[]
-  identities         AuthIdentity[]
   sessions           Session[]
   financePreferences FinancePreferences?
   accounts           Account[]
@@ -83,66 +80,16 @@ model Account {
   @@index([userId, archivedAt, id])
 }
 
-model AuthIdentity {
-  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId          String       @db.Uuid
-  provider        AuthProvider
-  // Google's verified, case-sensitive `sub`, not an email or client-supplied ID.
-  providerSubject String       @db.VarChar(255)
-  createdAt       DateTime     @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime     @default(now()) @updatedAt @db.Timestamptz(3)
-  user            User         @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-
-  @@unique([provider, providerSubject])
-  @@unique([userId, provider])
-}
-
-// One login on one device; also the revocation boundary for its refresh family.
+// One signed-in device. The row lives until logout; deleting it revokes the
+// device immediately. Only the SHA-256 of the opaque bearer token is stored.
 model Session {
-  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId            String          @db.Uuid
-  expiresAt         DateTime?       @db.Timestamptz(3)
-  revokedAt         DateTime?       @db.Timestamptz(3)
-  lastUsedAt        DateTime?       @db.Timestamptz(3)
-  reauthenticatedAt DateTime?       @db.Timestamptz(3)
-  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
-  updatedAt         DateTime        @default(now()) @updatedAt @db.Timestamptz(3)
-  user              User            @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  refreshTokens     RefreshToken[]
-  challenges        AuthChallenge[]
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @db.Uuid
+  tokenHash String   @unique @db.VarChar(64)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
-  @@index([userId, revokedAt, expiresAt])
-  @@index([expiresAt])
-}
-
-// One-time Google proof binding. Link/reauth challenges belong to one session.
-model AuthChallenge {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  nonceHash  String    @unique @db.VarChar(64)
-  purpose    String    @db.VarChar(20)
-  sessionId  String?   @db.Uuid
-  expiresAt  DateTime  @db.Timestamptz(3)
-  consumedAt DateTime? @db.Timestamptz(3)
-  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
-  session    Session?  @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-
-  @@index([expiresAt])
-  @@index([sessionId])
-}
-
-// Retain consumed hashes while the session is usable to detect rotation replay.
-model RefreshToken {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  sessionId  String    @db.Uuid
-  tokenHash  String    @unique @db.VarChar(64)
-  expiresAt  DateTime? @db.Timestamptz(3)
-  consumedAt DateTime? @db.Timestamptz(3)
-  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
-  session    Session   @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-
-  @@index([sessionId])
-  @@index([expiresAt])
+  @@index([userId])
 }
 
 model Category {

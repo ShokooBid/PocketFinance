@@ -122,7 +122,7 @@ describe("shared approved category catalog", () => {
       })
     ).toEqual(before);
   });
-  it("shares the same rows across password/Google signup, login and linking without category copies", async () => {
+  it("shares the same rows across password/Google signup and login without category copies", async () => {
     const email = `${randomUUID()}@example.invalid`;
     const first = await auth.authenticate(
       (await auth.register(email, password)).accessToken
@@ -130,28 +130,15 @@ describe("shared approved category catalog", () => {
     const second = await owner();
     await auth.login(email, password);
     const subject = randomUUID();
-    const challenge = await auth.challenge("login");
     const google = await auth.authenticate(
       (
         await auth.googleLogin({
-          challengeId: challenge.challengeId,
-          nonce: challenge.nonce,
+          nonce: auth.challenge().nonce,
           idToken: subject
         })
       ).accessToken
     );
-    const again = await auth.challenge("login");
-    await auth.googleLogin({
-      challengeId: again.challengeId,
-      nonce: again.nonce,
-      idToken: subject
-    });
-    const link = await auth.challenge("link", first);
-    await auth.link(first, {
-      challengeId: link.challengeId,
-      nonce: link.nonce,
-      idToken: randomUUID()
-    });
+    await auth.googleLogin({ nonce: auth.challenge().nonce, idToken: subject });
     for (const userId of [first.userId, second.userId, google.userId]) {
       expect(await db.category.count({ where: { userId } })).toBe(0);
       expect(

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, jest } from "@jest/globals";
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import { Platform } from "react-native";
 import { GoogleOneTapSignIn as google } from "react-native-nitro-google-signin";
-import { googleProof } from "../src/auth/google.native";
+import { googleConfigured, googleProof } from "../src/auth/google.native";
 
 jest.mock("react-native-nitro-google-signin", () => ({
   GoogleOneTapSignIn: {
@@ -36,6 +36,30 @@ function native() {
   process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID =
     "synthetic.apps.googleusercontent.com";
 }
+describe("Google availability", () => {
+  it("requires a native build and client IDs, with the iOS ID only on iOS", () => {
+    native();
+    expect(googleConfigured()).toBe(true);
+    jest.replaceProperty(Platform, "OS", "ios");
+    delete process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+    expect(googleConfigured()).toBe(false);
+    process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID =
+      "synthetic-ios.apps.googleusercontent.com";
+    expect(googleConfigured()).toBe(true);
+    delete process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+    expect(googleConfigured()).toBe(false);
+  });
+  it("is never available in Expo Go", () => {
+    native();
+    jest.replaceProperty(
+      Constants,
+      "executionEnvironment",
+      ExecutionEnvironment.StoreClient
+    );
+    expect(googleConfigured()).toBe(false);
+  });
+});
+
 describe("native Google proof boundary", () => {
   it("passes the exact challenge nonce through explicit native UI and discards provider state", async () => {
     native();

@@ -1,14 +1,8 @@
 import { randomUUID } from "node:crypto";
-import {
-  createLocalJWKSet,
-  decodeJwt,
-  exportJWK,
-  generateKeyPair,
-  SignJWT
-} from "jose";
+import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../../src/app.js";
-import { accessToken, tokenHash } from "../../src/auth/crypto.js";
+import { signNonce, tokenHash } from "../../src/auth/crypto.js";
 import { googleVerifier } from "../../src/auth/google.js";
 import { createAuthService } from "../../src/auth/service.js";
 import { testConfig } from "../fixtures.js";
@@ -19,25 +13,17 @@ const db = database.db;
 const config = testConfig();
 let now = new Date();
 let app: Awaited<ReturnType<typeof buildApp>>;
-let auth: Awaited<ReturnType<typeof createAuthService>>;
 let keys: Awaited<ReturnType<typeof generateKeyPair>>;
 const password = "synthetic long passphrase 17";
-type Tokens = {
-  accessToken: string;
-  refreshToken: string;
-  accessExpiresAt: string;
-  sessionExpiresAt: string | null;
-};
-type Challenge = { challengeId: string; nonce: string };
+type Tokens = { accessToken: string; tokenType: "Bearer" };
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
-const persistentHeaders = { "x-pocketfinance-session-policy": "persistent" };
 const uniqueEmail = () => `${randomUUID()}@example.invalid`;
 
 beforeAll(async () => {
   await database.start();
   keys = await generateKeyPair("RS256");
   const jwk = await exportJWK(keys.publicKey);
-  auth = await createAuthService(
+  const auth = await createAuthService(
     db,
     config,
     googleVerifier(
@@ -56,46 +42,32 @@ afterAll(async () => {
   }
 });
 
-async function post(
-  url: string,
-  payload: object,
-  access?: string,
-  headers?: Record<string, string>
-) {
+async function post(url: string, payload?: object, access?: string) {
   return app.inject({
     method: "POST",
     url: `/v1/auth/${url}`,
-    payload,
-    headers: { ...(access ? bearer(access) : {}), ...headers }
+    ...(payload ? { payload } : {}),
+    headers: access ? bearer(access) : {}
   });
 }
-async function register(
-  email = uniqueEmail(),
-  headers?: Record<string, string>
-) {
-  const response = await post(
-    "register",
-    { email, password },
-    undefined,
-    headers
-  );
+async function register(email = uniqueEmail()) {
+  const response = await post("register", { email, password });
   expect(response.statusCode, response.body).toBe(201);
-  return { tokens: response.json<Tokens>(), email };
+  return { token: response.json<Tokens>().accessToken, email };
 }
-async function challenge(purpose = "login", access?: string) {
-  const response = await post("google/challenges", { purpose }, access);
+async function challenge() {
+  const response = await post("google/challenges");
   expect(response.statusCode, response.body).toBe(201);
-  const { challengeId, nonce } = response.json<Challenge>();
-  return { challengeId, nonce };
+  return response.json<{ nonce: string }>().nonce;
 }
-async function signedProof(
-  ch: Challenge,
+async function googleProof(
+  nonce: string,
   subject = `synthetic-${randomUUID()}`,
   email = uniqueEmail(),
   extra: Record<string, unknown> = {}
 ) {
   const idToken = await new SignJWT({
-    nonce: ch.nonce,
+    nonce,
     email,
     email_verified: true,
     azp: "synthetic-native-client",
@@ -108,46 +80,27 @@ async function signedProof(
     .setIssuedAt(Math.floor(now.getTime() / 1000))
     .setExpirationTime(Math.floor(now.getTime() / 1000) + 300)
     .sign(keys.privateKey);
-  return { ...ch, idToken };
+  return { nonce, idToken };
 }
 const me = (token: string) =>
   app.inject({ url: "/v1/me", headers: bearer(token) });
+const userId = async (token: string) => (await me(token)).json().id as string;
 
-describe("password login and server-checked sessions", () => {
-  it("handles legacy email casing/spacing and rejects an individually expired refresh token", async () => {
-    const { tokens, email } = await register();
-    const claims = decodeJwt(tokens.accessToken);
-    await db.user.update({
-      where: { id: claims.sub! },
-      data: { email: ` ${email.toUpperCase()} ` }
-    });
-    expect((await post("login", { email, password })).statusCode).toBe(200);
-    const collision = await post("register", { email, password });
-    expect(collision.statusCode).toBe(401);
-    await db.refreshToken.update({
-      where: { tokenHash: tokenHash(tokens.refreshToken) },
-      data: {
-        createdAt: new Date(now.getTime() - 10000),
-        expiresAt: new Date(now.getTime() - 1000)
-      }
-    });
-    expect(
-      (await post("refresh", { refreshToken: tokens.refreshToken })).statusCode
-    ).toBe(401);
-    expect((await me(tokens.accessToken)).statusCode).toBe(401);
-  });
-  it("normalizes email, hashes passwords, leaves email unverified and stores only token hashes", async () => {
+describe("password sign-in and opaque sessions", () => {
+  it("normalizes email, hashes the password and stores only the session token hash", async () => {
     const email = uniqueEmail();
-    const { tokens } = await register(` ${email.toUpperCase()} `);
+    const { token } = await register(` ${email.toUpperCase()} `);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     const user = await db.user.findUniqueOrThrow({ where: { email } });
     expect(user.passwordHash).toMatch(/^\$argon2id\$/);
     expect(user.passwordHash).not.toContain(password);
     expect(user.emailVerifiedAt).toBeNull();
-    const token = await db.refreshToken.findUniqueOrThrow({
-      where: { tokenHash: tokenHash(tokens.refreshToken) }
+    const session = await db.session.findUniqueOrThrow({
+      where: { tokenHash: tokenHash(token) }
     });
-    expect(token.tokenHash).not.toBe(tokens.refreshToken);
-    expect((await me(tokens.accessToken)).json()).toMatchObject({
+    expect(session).toMatchObject({ userId: user.id });
+    expect(JSON.stringify(session)).not.toContain(token);
+    expect((await me(token)).json()).toEqual({
       id: user.id,
       email,
       emailVerified: false,
@@ -157,6 +110,15 @@ describe("password login and server-checked sessions", () => {
       (await post("login", { email: ` ${email.toUpperCase()} `, password }))
         .statusCode
     ).toBe(200);
+    expect((await post("register", { email, password })).statusCode).toBe(401);
+  });
+  it("finds legacy mixed-case/space-padded emails on login and blocks duplicates", async () => {
+    const { token, email } = await register();
+    await db.user.update({
+      where: { id: await userId(token) },
+      data: { email: ` ${email.toUpperCase()} ` }
+    });
+    expect((await post("login", { email, password })).statusCode).toBe(200);
     expect((await post("register", { email, password })).statusCode).toBe(401);
   });
   it("returns the same credential error for absent, wrong, null, malformed and disabled credentials", async () => {
@@ -195,241 +157,161 @@ describe("password login and server-checked sessions", () => {
       expect(response.body).not.toContain(candidate);
     }
   });
-  it("rejects missing, forged, expired and cross-user access tokens", async () => {
-    const first = await register();
-    const second = await register();
-    const claims = decodeJwt(first.tokens.accessToken);
+  it("rejects missing, malformed, unknown and non-bearer tokens", async () => {
+    const { token } = await register();
     expect((await app.inject("/v1/me")).statusCode).toBe(401);
-    expect((await me("invalid.token.signature")).statusCode).toBe(401);
-    const expired = await accessToken(
-      config,
-      claims.sub!,
-      claims.sid as string,
-      new Date(now.getTime() - 10000),
-      new Date(now.getTime() - 1000)
-    );
-    expect((await me(expired)).statusCode).toBe(401);
-    const wrongOwner = await accessToken(
-      config,
-      decodeJwt(second.tokens.accessToken).sub!,
-      claims.sid as string,
-      now,
-      new Date(now.getTime() + 60000)
-    );
-    expect((await me(wrongOwner)).statusCode).toBe(401);
-    const otherConfig = { ...config, tokenKey: new Uint8Array(32) };
-    expect(
-      (
-        await me(
-          await accessToken(
-            otherConfig,
-            claims.sub!,
-            claims.sid as string,
-            now,
-            new Date(now.getTime() + 60000)
-          )
-        )
-      ).statusCode
-    ).toBe(401);
+    for (const header of [
+      "Bearer invalid.token.signature",
+      `Bearer ${"A".repeat(43)}`,
+      `Bearer ${token}x`,
+      `Basic ${token}`,
+      token
+    ])
+      expect(
+        (
+          await app.inject({
+            url: "/v1/me",
+            headers: { authorization: header }
+          })
+        ).statusCode
+      ).toBe(401);
+    expect((await me(token)).statusCode).toBe(200);
   });
-  it("rotates once, retains consumed hashes, and commits replay revocation", async () => {
-    const { tokens } = await register();
-    const rotated = await post("refresh", {
-      refreshToken: tokens.refreshToken
-    });
-    expect(rotated.statusCode).toBe(200);
-    const replacement = rotated.json<Tokens>();
-    expect(replacement.refreshToken).not.toBe(tokens.refreshToken);
-    expect(replacement.sessionExpiresAt).toBe(tokens.sessionExpiresAt);
-    expect(
-      (
-        await db.refreshToken.findUniqueOrThrow({
-          where: { tokenHash: tokenHash(tokens.refreshToken) }
-        })
-      ).consumedAt
-    ).not.toBeNull();
-    expect(
-      (await post("refresh", { refreshToken: tokens.refreshToken })).statusCode
-    ).toBe(401);
-    expect((await me(replacement.accessToken)).statusCode).toBe(401);
-    expect(
-      (await post("refresh", { refreshToken: replacement.refreshToken }))
-        .statusCode
-    ).toBe(401);
-    const session = await db.session.findUniqueOrThrow({
-      where: { id: decodeJwt(tokens.accessToken).sid as string }
-    });
-    expect(session.revokedAt).not.toBeNull();
+  it("keeps a session valid until sign-out, even after a year without use", async () => {
+    const startedAt = now;
+    const { token } = await register();
+    try {
+      now = new Date(startedAt.getTime() + 400 * 86_400_000);
+      expect((await me(token)).statusCode).toBe(200);
+    } finally {
+      now = startedAt;
+    }
   });
-  it("serializes concurrent rotation: one successor, then family revoked by loser", async () => {
-    const { tokens } = await register();
+  it("logs out the current or all devices by deleting sessions, without affecting another user", async () => {
+    const first = await register();
+    const second = (
+      await post("login", { email: first.email, password })
+    ).json<Tokens>().accessToken;
+    const other = await register();
+    expect((await post("logout", {}, first.token)).statusCode).toBe(200);
+    expect((await me(first.token)).statusCode).toBe(401);
+    expect(
+      await db.session.count({ where: { tokenHash: tokenHash(first.token) } })
+    ).toBe(0);
+    expect((await me(second)).statusCode).toBe(200);
+    const third = (
+      await post("login", { email: first.email, password })
+    ).json<Tokens>().accessToken;
+    const owner = await userId(second);
+    expect(
+      (await post("logout", { allSessions: true }, second)).statusCode
+    ).toBe(200);
+    for (const revoked of [second, third])
+      expect((await me(revoked)).statusCode).toBe(401);
+    expect(await db.session.count({ where: { userId: owner } })).toBe(0);
+    expect((await me(other.token)).statusCode).toBe(200);
+    expect((await post("logout", {}, second)).statusCode).toBe(401);
+  });
+  it("rejects every session of a disabled user immediately", async () => {
+    const { token, email } = await register();
+    await db.user.update({
+      where: { id: await userId(token) },
+      data: { disabledAt: now }
+    });
+    expect((await me(token)).statusCode).toBe(401);
+    expect((await post("login", { email, password })).statusCode).toBe(401);
+  });
+  it("authenticates a stored token against a fresh service instance (API restart)", async () => {
+    const { token } = await register();
+    const restarted = await createAuthService(
+      db,
+      config,
+      googleVerifier(config),
+      () => now
+    );
+    expect((await restarted.authenticate(token)).userId).toBe(
+      await userId(token)
+    );
+  });
+  it("no longer serves refresh, linking or reauthentication", async () => {
+    const { token } = await register();
+    for (const path of ["refresh", "google/link", "reauthenticate"])
+      expect((await post(path, {}, token)).statusCode).toBe(404);
+  });
+  it("serializes concurrent sign-up for the same normalized email", async () => {
+    const email = uniqueEmail();
     const results = await Promise.all([
-      post("refresh", { refreshToken: tokens.refreshToken }),
-      post("refresh", { refreshToken: tokens.refreshToken })
+      post("register", { email, password }),
+      post("register", { email: email.toUpperCase(), password })
     ]);
     expect(results.map((response) => response.statusCode).sort()).toEqual([
-      200, 401
+      201, 401
     ]);
-    const successor = results
-      .find((response) => response.statusCode === 200)!
-      .json<Tokens>();
-    expect((await me(successor.accessToken)).statusCode).toBe(401);
-    const sid = decodeJwt(tokens.accessToken).sid as string;
-    expect(await db.refreshToken.count({ where: { sessionId: sid } })).toBe(2);
-    expect(
-      (await post("refresh", { refreshToken: successor.refreshToken }))
-        .statusCode
-    ).toBe(401);
-  });
-  it("rejects legacy sessions at their expiry boundaries and disabled users even when opting in", async () => {
-    for (const reason of ["absolute", "idle", "disabled"]) {
-      const { tokens } = await register();
-      const claims = decodeJwt(tokens.accessToken);
-      if (reason === "disabled")
-        await db.user.update({
-          where: { id: claims.sub! },
-          data: { disabledAt: now }
-        });
-      else {
-        const absoluteStart = new Date(
-          now.getTime() - config.sessionSeconds * 1000
-        );
-        const idleStart = new Date(now.getTime() - config.idleSeconds * 1000);
-        await db.session.update({
-          where: { id: claims.sid as string },
-          data: {
-            ...(reason === "absolute"
-              ? { createdAt: absoluteStart, expiresAt: now }
-              : { createdAt: idleStart, lastUsedAt: idleStart })
-          }
-        });
-      }
-      expect((await me(tokens.accessToken)).statusCode).toBe(401);
-      expect(
-        (
-          await post(
-            "refresh",
-            { refreshToken: tokens.refreshToken },
-            undefined,
-            persistentHeaders
-          )
-        ).statusCode
-      ).toBe(401);
-    }
-  });
-  it("logs out current or all sessions without affecting another user", async () => {
-    const first = await register(undefined, persistentHeaders);
-    const second = (
-      await post(
-        "login",
-        { email: first.email, password },
-        undefined,
-        persistentHeaders
-      )
-    ).json<Tokens>();
-    expect(second.sessionExpiresAt).toBeNull();
-    const other = await register();
-    expect(
-      (await post("logout", {}, first.tokens.accessToken)).statusCode
-    ).toBe(200);
-    expect((await me(first.tokens.accessToken)).statusCode).toBe(401);
-    expect(
-      (await post("refresh", { refreshToken: first.tokens.refreshToken }))
-        .statusCode
-    ).toBe(401);
-    expect((await me(second.accessToken)).statusCode).toBe(200);
-    const third = (
-      await post(
-        "login",
-        { email: first.email, password },
-        undefined,
-        persistentHeaders
-      )
-    ).json<Tokens>();
-    expect(
-      (await post("logout", { allSessions: true }, second.accessToken))
-        .statusCode
-    ).toBe(200);
-    for (const revoked of [second, third]) {
-      expect((await me(revoked.accessToken)).statusCode).toBe(401);
-      expect(
-        (
-          await post(
-            "refresh",
-            { refreshToken: revoked.refreshToken },
-            undefined,
-            persistentHeaders
-          )
-        ).statusCode
-      ).toBe(401);
-    }
-    expect((await me(other.tokens.accessToken)).statusCode).toBe(200);
   });
 });
 
-describe("Google onboarding, challenges and explicit linking", () => {
-  it("creates Google-only users atomically and resolves subject before changed email", async () => {
+describe("Google sign-in", () => {
+  it("creates a Google-only user and resolves the subject before a changed email", async () => {
     const subject = `synthetic-${randomUUID()}`;
     const email = uniqueEmail();
-    const proof = await signedProof(await challenge(), subject, email);
-    const response = await post("google", proof, undefined, persistentHeaders);
+    const response = await post(
+      "google",
+      await googleProof(await challenge(), subject, email)
+    );
     expect(response.statusCode, response.body).toBe(200);
-    const tokens = response.json<Tokens>();
-    expect(tokens.sessionExpiresAt).toBeNull();
+    const token = response.json<Tokens>().accessToken;
     const user = await db.user.findUniqueOrThrow({ where: { email } });
-    expect(user.passwordHash).toBeNull();
+    expect(user).toMatchObject({ passwordHash: null, googleSubject: subject });
     expect(user.emailVerifiedAt).not.toBeNull();
-    const storedChallenge = await db.authChallenge.findUniqueOrThrow({
-      where: { id: proof.challengeId }
+    expect((await me(token)).json()).toMatchObject({
+      id: user.id,
+      emailVerified: true,
+      methods: { password: false, google: true }
     });
-    expect(storedChallenge.nonceHash).toBe(tokenHash(proof.nonce));
-    expect(storedChallenge.consumedAt).not.toBeNull();
     expect((await post("login", { email, password })).statusCode).toBe(401);
     const changed = await post(
       "google",
-      await signedProof(await challenge(), subject, uniqueEmail())
+      await googleProof(await challenge(), subject, uniqueEmail())
     );
     expect(changed.statusCode).toBe(200);
-    expect(decodeJwt(changed.json<Tokens>().accessToken).sub).toBe(user.id);
-    expect((await me(tokens.accessToken)).json().email).toBe(email);
+    expect(await userId(changed.json<Tokens>().accessToken)).toBe(user.id);
+    expect((await me(token)).json().email).toBe(email);
   });
-  it("rejects missing, mismatched, expired, replayed and concurrent challenges", async () => {
-    const proof = await signedProof(await challenge());
+  it("rejects forged, expired and mismatched nonces before trusting the proof", async () => {
+    const proof = await googleProof(await challenge());
+    const forged = signNonce(
+      new Uint8Array(32),
+      new Date(now.getTime() + 60_000)
+    );
+    expect((await post("google", await googleProof(forged))).statusCode).toBe(
+      401
+    );
     expect(
-      (await post("google", { ...proof, challengeId: randomUUID() })).statusCode
+      (await post("google", { ...proof, nonce: await challenge() })).statusCode
     ).toBe(401);
     expect(
       (await post("google", { ...proof, nonce: "x".repeat(43) })).statusCode
-    ).toBe(401);
-    const results = await Promise.all([
-      post("google", proof),
-      post("google", proof)
-    ]);
-    expect(results.map((result) => result.statusCode).sort()).toEqual([
-      200, 401
-    ]);
-    expect((await post("google", proof)).statusCode).toBe(401);
-    const expiring = await signedProof(await challenge());
+    ).toBe(422);
     const original = now;
     try {
-      now = new Date(now.getTime() + 301000);
-      expect((await post("google", expiring)).statusCode).toBe(401);
+      now = new Date(now.getTime() + (config.challengeSeconds + 1) * 1000);
+      expect((await post("google", proof)).statusCode).toBe(401);
     } finally {
       now = original;
     }
+    expect((await post("google", proof)).statusCode).toBe(200);
   });
-  it("burns a challenge on invalid provider proof and rejects unverified onboarding email", async () => {
-    const ch = await challenge();
+  it("rejects invalid provider proof and unverified onboarding email", async () => {
+    const nonce = await challenge();
     expect(
-      (await post("google", { ...ch, idToken: "invalid-token" })).statusCode
+      (await post("google", { nonce, idToken: "invalid-token" })).statusCode
     ).toBe(401);
-    expect((await post("google", await signedProof(ch))).statusCode).toBe(401);
     const email = uniqueEmail();
     expect(
       (
         await post(
           "google",
-          await signedProof(await challenge(), undefined, email, {
+          await googleProof(await challenge(), undefined, email, {
             email_verified: false
           })
         )
@@ -437,306 +319,60 @@ describe("Google onboarding, challenges and explicit linking", () => {
     ).toBe(401);
     expect(await db.user.findUnique({ where: { email } })).toBeNull();
   });
-  it("never merges matching emails and links only with proof of both identities", async () => {
-    const { tokens, email } = await register();
+  it("never merges a Google identity into an existing password account by email", async () => {
+    const { token, email } = await register();
     const subject = `synthetic-${randomUUID()}`;
-    const collision = await post(
-      "google",
-      await signedProof(await challenge(), subject, email.toUpperCase())
-    );
-    expect(collision.statusCode).toBe(401);
-    expect(
-      await db.authIdentity.count({ where: { providerSubject: subject } })
-    ).toBe(0);
-    const claims = decodeJwt(tokens.accessToken);
-    await db.session.update({
-      where: { id: claims.sid as string },
-      data: { reauthenticatedAt: new Date(now.getTime() - 301000) }
-    });
-    expect(
-      (await post("google/challenges", { purpose: "link" }, tokens.accessToken))
-        .statusCode
-    ).toBe(401);
-    expect(
-      (await post("reauthenticate", { password: "wrong" }, tokens.accessToken))
-        .statusCode
-    ).toBe(401);
-    expect(
-      (await post("reauthenticate", { password }, tokens.accessToken))
-        .statusCode
-    ).toBe(200);
-    const proof = await signedProof(
-      await challenge("link", tokens.accessToken),
-      subject,
-      email
-    );
-    expect(
-      (await post("google/link", proof, tokens.accessToken)).statusCode
-    ).toBe(200);
-    expect((await me(tokens.accessToken)).json()).toMatchObject({
-      id: claims.sub,
-      emailVerified: false,
-      methods: { google: true, password: true }
-    });
-    expect(
-      (await post("google/link", proof, tokens.accessToken)).statusCode
-    ).toBe(401);
-    const loggedIn = await post(
-      "google",
-      await signedProof(await challenge(), subject, email)
-    );
-    expect(decodeJwt(loggedIn.json<Tokens>().accessToken).sub).toBe(claims.sub);
-  });
-  it("binds link/reauth challenges to their purpose and session and never reassigns subjects", async () => {
-    const first = await register();
-    const second = await register();
-    const subject = `synthetic-${randomUUID()}`;
-    const linkProof = await signedProof(
-      await challenge("link", first.tokens.accessToken),
-      subject
-    );
-    expect(
-      (await post("google/link", linkProof, second.tokens.accessToken))
-        .statusCode
-    ).toBe(401);
-    expect((await post("google", linkProof)).statusCode).toBe(401);
-    expect(
-      (await post("google/link", linkProof, first.tokens.accessToken))
-        .statusCode
-    ).toBe(200);
-    const stolen = await signedProof(
-      await challenge("link", second.tokens.accessToken),
-      subject
-    );
-    expect(
-      (await post("google/link", stolen, second.tokens.accessToken)).statusCode
-    ).toBe(401);
-    const fresh = await signedProof(
-      await challenge("reauthenticate", first.tokens.accessToken),
-      subject
-    );
-    expect(
-      (await post("reauthenticate", fresh, first.tokens.accessToken)).statusCode
-    ).toBe(200);
-    const wrong = await signedProof(
-      await challenge("reauthenticate", second.tokens.accessToken),
-      subject
-    );
-    expect(
-      (await post("reauthenticate", wrong, second.tokens.accessToken))
-        .statusCode
-    ).toBe(401);
     expect(
       (
-        await db.authIdentity.findUniqueOrThrow({
-          where: {
-            provider_providerSubject: {
-              provider: "google",
-              providerSubject: subject
-            }
-          }
-        })
-      ).userId
-    ).toBe(decodeJwt(first.tokens.accessToken).sub);
+        await post(
+          "google",
+          await googleProof(await challenge(), subject, email.toUpperCase())
+        )
+      ).statusCode
+    ).toBe(401);
+    expect(await db.user.count({ where: { googleSubject: subject } })).toBe(0);
+    expect((await me(token)).json().methods).toEqual({
+      password: true,
+      google: false
+    });
   });
-  it("handles signup and linking uniqueness races without duplicate ownership", async () => {
-    const email = uniqueEmail();
-    const passwordResults = await Promise.all([
-      post("register", { email, password }),
-      post("register", { email: email.toUpperCase(), password })
-    ]);
-    expect(
-      passwordResults.map((response) => response.statusCode).sort()
-    ).toEqual([201, 401]);
-    const first = await register();
-    const second = await register();
+  it("creates exactly one user for concurrent first sign-ins with the same subject", async () => {
     const subject = `synthetic-${randomUUID()}`;
+    const email = uniqueEmail();
     const proofs = await Promise.all([
-      signedProof(await challenge("link", first.tokens.accessToken), subject),
-      signedProof(await challenge("link", second.tokens.accessToken), subject)
+      googleProof(await challenge(), subject, email),
+      googleProof(await challenge(), subject, email)
     ]);
-    const results = await Promise.all([
-      post("google/link", proofs[0]!, first.tokens.accessToken),
-      post("google/link", proofs[1]!, second.tokens.accessToken)
-    ]);
-    expect(results.map((response) => response.statusCode).sort()).toEqual([
-      200, 401
-    ]);
-    expect(
-      await db.authIdentity.count({ where: { providerSubject: subject } })
-    ).toBe(1);
-    const googleSubject = `synthetic-${randomUUID()}`;
-    const googleEmail = uniqueEmail();
-    const signupProofs = await Promise.all([
-      signedProof(await challenge(), googleSubject, googleEmail),
-      signedProof(await challenge(), googleSubject, googleEmail)
-    ]);
-    const googleResults = await Promise.all(
-      signupProofs.map((proof) => post("google", proof))
+    const results = await Promise.all(
+      proofs.map((proof) => post("google", proof))
     );
     expect(
-      googleResults.every((response) =>
-        [200, 401].includes(response.statusCode)
-      )
+      results.every((response) => [200, 401].includes(response.statusCode))
     ).toBe(true);
-    expect(
-      await db.authIdentity.count({ where: { providerSubject: googleSubject } })
-    ).toBe(1);
-    expect(await db.user.count({ where: { email: googleEmail } })).toBe(1);
+    expect(await db.user.count({ where: { googleSubject: subject } })).toBe(1);
+    expect(await db.user.count({ where: { email } })).toBe(1);
   });
   it("rejects disabled Google users, even with a verified proof", async () => {
     const subject = `synthetic-${randomUUID()}`;
     const login = await post(
       "google",
-      await signedProof(await challenge(), subject)
+      await googleProof(await challenge(), subject)
     );
     await db.user.update({
-      where: { id: decodeJwt(login.json<Tokens>().accessToken).sub! },
+      where: { id: await userId(login.json<Tokens>().accessToken) },
       data: { disabledAt: now }
     });
     expect(
-      (await post("google", await signedProof(await challenge(), subject)))
+      (await post("google", await googleProof(await challenge(), subject)))
         .statusCode
     ).toBe(401);
   });
-  it("permits only one Google identity per owner during concurrent linking", async () => {
-    const { tokens } = await register();
-    const proofs = await Promise.all([
-      signedProof(await challenge("link", tokens.accessToken)),
-      signedProof(await challenge("link", tokens.accessToken))
-    ]);
-    const results = await Promise.all(
-      proofs.map((proof) => post("google/link", proof, tokens.accessToken))
-    );
-    expect(results.map((response) => response.statusCode).sort()).toEqual([
-      200, 401
-    ]);
-    expect(
-      await db.authIdentity.count({
-        where: { userId: decodeJwt(tokens.accessToken).sub! }
-      })
-    ).toBe(1);
-  });
-});
-
-describe("session persistence and cleanup", () => {
-  it("refreshes a persistent session at both former deadlines while access tokens still expire", async () => {
-    const startedAt = now;
-    const { tokens } = await register(undefined, persistentHeaders);
-    const sessionId = decodeJwt(tokens.accessToken).sid as string;
-    expect(tokens.sessionExpiresAt).toBeNull();
-    expect(Date.parse(tokens.accessExpiresAt) - startedAt.getTime()).toBe(
-      config.accessSeconds * 1000
-    );
-
-    try {
-      now = new Date(tokens.accessExpiresAt);
-      expect((await me(tokens.accessToken)).statusCode).toBe(401);
-
-      let current = tokens;
-      for (const elapsed of [config.idleSeconds, config.sessionSeconds]) {
-        now = new Date(startedAt.getTime() + elapsed * 1000);
-        await auth.cleanup();
-        const rotated = await post(
-          "refresh",
-          { refreshToken: current.refreshToken },
-          undefined,
-          persistentHeaders
-        );
-        expect(rotated.statusCode).toBe(200);
-        const replacement = rotated.json<Tokens>();
-        expect(replacement.sessionExpiresAt).toBeNull();
-        expect(replacement.refreshToken).not.toBe(current.refreshToken);
-        expect((await me(replacement.accessToken)).statusCode).toBe(200);
-        current = replacement;
-      }
-      expect(await db.refreshToken.count({ where: { sessionId } })).toBe(3);
-
-      await db.session.update({
-        where: { id: sessionId },
-        data: { revokedAt: now }
-      });
-      expect((await me(current.accessToken)).statusCode).toBe(401);
-      expect(
-        (
-          await post(
-            "refresh",
-            { refreshToken: current.refreshToken },
-            undefined,
-            persistentHeaders
-          )
-        ).statusCode
-      ).toBe(401);
-    } finally {
-      now = startedAt;
-    }
-  });
-
-  it("upgrades a valid legacy family once and retains its consumed hashes for replay detection", async () => {
-    const { tokens } = await register();
-    expect(tokens.sessionExpiresAt).not.toBeNull();
-    const ordinary = await post("refresh", {
-      refreshToken: tokens.refreshToken
-    });
-    expect(ordinary.statusCode).toBe(200);
-    const legacy = ordinary.json<Tokens>();
-    expect(legacy.sessionExpiresAt).toBe(tokens.sessionExpiresAt);
-
-    const upgrade = await post(
-      "refresh",
-      { refreshToken: legacy.refreshToken },
-      undefined,
-      persistentHeaders
-    );
-    expect(upgrade.statusCode).toBe(200);
-    const persistent = upgrade.json<Tokens>();
-    expect(persistent.sessionExpiresAt).toBeNull();
-    expect((await me(persistent.accessToken)).statusCode).toBe(200);
-    expect(
-      (
-        await post(
-          "refresh",
-          { refreshToken: legacy.refreshToken },
-          undefined,
-          persistentHeaders
-        )
-      ).statusCode
-    ).toBe(401);
-    expect((await me(persistent.accessToken)).statusCode).toBe(401);
-  });
-
-  it("restores against a new service instance using only the persisted refresh credential", async () => {
-    const { tokens } = await register();
-    const restored = await createAuthService(
+  it("refuses Google challenges when Google is not configured", async () => {
+    const auth = await createAuthService(
       db,
-      config,
-      googleVerifier(config),
-      () => now
+      { ...config, googleAudiences: [] },
+      googleVerifier(config)
     );
-    const renewed = await restored.refresh(tokens.refreshToken);
-    expect((await restored.authenticate(renewed.accessToken)).userId).toBe(
-      decodeJwt(tokens.accessToken).sub
-    );
-  });
-  it("cleans expired/revoked families in dependency order, preserving active replay history", async () => {
-    const active = await register();
-    await post("refresh", { refreshToken: active.tokens.refreshToken });
-    const revoked = await register();
-    await challenge("link", revoked.tokens.accessToken);
-    await post("logout", {}, revoked.tokens.accessToken);
-    const oldId = decodeJwt(revoked.tokens.accessToken).sid as string;
-    expect(await auth.cleanup()).toBeGreaterThan(0);
-    expect(await db.session.findUnique({ where: { id: oldId } })).toBeNull();
-    expect(await db.refreshToken.count({ where: { sessionId: oldId } })).toBe(
-      0
-    );
-    expect(await db.authChallenge.count({ where: { sessionId: oldId } })).toBe(
-      0
-    );
-    expect(
-      await db.refreshToken.count({
-        where: { sessionId: decodeJwt(active.tokens.accessToken).sid as string }
-      })
-    ).toBe(2);
+    expect(() => auth.challenge()).toThrow();
   });
 });

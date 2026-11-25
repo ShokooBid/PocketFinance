@@ -1,195 +1,180 @@
-# Authentication plan: email/password, Google, and persistent mobile sessions
+# Authentication plan: email/password, Google, and sessions until sign-out
 
-Accepted on 2026-10-19 at the user's request. This extends the original
-email/password-only MVP. It changes planning and database foundations now;
-login endpoints and mobile sign-in are not implemented in Issue #6.
+Accepted on 2026-10-19 at the user's request and implemented in Issues #7, #11
+and #16. **Simplified on 2026-11-25**
+([#143](https://github.com/ShokooBid/PocketFinance/issues/143)): the
+original JWT + rotating refresh-token design, Google linking and
+reauthentication were replaced by one opaque session token per device. The
+section [Why the design was simplified](#why-the-design-was-simplified) records
+the trade-off. See the [development guide](../DEVELOPMENT.md) for configuration
+and verification, and the [API source](../apps/api/src/openapi.ts) for routes.
 
-Implementation update (Issue #7, 2026-10-20): backend password/Google login,
-challenges, explicit linking, session checks/rotation/revocation and cleanup are
-implemented with the prerequisite Issue #8 foundation. Mobile work remains #11.
-See the [development guide](../DEVELOPMENT.md) for configuration and verification,
-and the [API source](../apps/api/src/openapi.ts) for current routes. Earlier
-future-tense text records the accepted plan; this update describes the implemented
-backend boundary.
-
-Mobile navigation update ([#124](https://github.com/ShokooBid/PocketFinance/issues/124)).
-The avatar menu offers **Accounts** and **Sign out** or **Exit demo**. Signing
-out or exiting the demo discards the transaction draft without a prompt. Google
-linking and all-device revocation are API capabilities.
+The avatar menu offers **Accounts** and **Sign out** or **Exit demo**
+([#124](https://github.com/ShokooBid/PocketFinance/issues/124)). Signing out or
+exiting the demo discards the transaction draft without a prompt. All-device
+sign-out is an API capability.
 
 ## User experience
 
-The sign-in screen offers email/password and Continue with Google. Both lead to
-the same PocketFinance account model and session mechanism. Closing/reopening the
-app normally restores the session without another login. Logout, revocation,
-or missing secure credentials require authentication again. Older clients retain
-the bounded session policy described below.
+Signed-out users see two screens that link to each other with `router.replace`:
+**Sign in** (`/sign-in`, password autofill `current-password`) and **Create
+account** (`/sign-up`, `new-password`, a live 12–128 character rule and a
+neutral message when registration is refused, so emails cannot be probed). Both
+share `src/auth-form.tsx`; the rules live in `src/auth-form-data.ts`. Continue
+with Google appears on both, only in builds where Google is configured, and
+finds or creates the account. After registration, finance setup (currency, then
+first account) completes onboarding. Both methods lead to the same
+PocketFinance account model and session mechanism. A signed-in device
+**stays signed in until the user signs out**: closing/reopening the app restores
+the session with no renewal step. Sign-out on another device ("all devices"), a
+disabled account, or missing secure credentials require signing in again.
 Google cancellation leaves the sign-in screen usable; provider failure does not
 disable email/password. Biometric app lock, MFA, password recovery, automatic
-account merging, and unlinking login methods remain separate work.
+account merging, linking a second login method and unlinking remain separate work.
 
 ## Database responsibilities
 
 | Model | Meaning and invariant |
 | --- | --- |
-| `User` | Stable owner of finance data. `passwordHash` is nullable for Google-only users. `emailVerifiedAt` records contact verification when established; `disabledAt` blocks access in the future service. |
-| `AuthIdentity` | A Google `sub` linked to one user. `(provider, providerSubject)` is unique globally; `(userId, provider)` permits one Google account per PocketFinance user. No Google passwords or provider access/refresh tokens are stored. |
-| `Session` | One device login and refresh-token family. `expiresAt` is null for persistent sessions. `revokedAt` records logout or reuse revocation, and `lastUsedAt` is the inactivity anchor for bounded sessions. |
-| `RefreshToken` | One issued PocketFinance refresh token, stored only as a unique SHA-256 hex hash. `expiresAt` is null for persistent credentials. `consumedAt` preserves rotation history, with ownership defined by `sessionId`. |
+| `User` | Stable owner of finance data. `passwordHash` is null for Google-only users. `googleSubject` is Google's verified `sub`, unique and nonblank when set; it is never an email or client value. `emailVerifiedAt` records verified contact email; `disabledAt` blocks every session immediately. |
+| `Session` | One signed-in device: `userId`, a unique SHA-256 hex `tokenHash`, `createdAt`. There is no expiry; deleting the row is revocation. |
 
-Password hashes use a slow adaptive password algorithm (planned Argon2id).
-Refresh tokens instead have at least 256 bits of cryptographically random entropy,
-so SHA-256 hashes support lookup without storing the bearer secret. Do not hash
-human passwords with plain SHA-256. SQL can enforce hash syntax and uniqueness,
-but cannot prove randomness or that the application actually hashed a secret.
+Password hashes use Argon2id. Session tokens have 256 bits of cryptographically
+random entropy, so a SHA-256 hash supports lookup without storing the bearer
+secret. Do not hash human passwords with plain SHA-256. SQL enforces hash syntax,
+token and subject uniqueness and nonblank subjects; it cannot prove randomness or
+that the application actually hashed a secret.
 
-The second migration, `20261019000000_auth_sessions`, relaxes the password field
-and adds these tables; it preserves the original finance migration and data.
-SQL CHECKs reject blank subjects, malformed token hashes, and expiry before
-creation. Foreign keys use RESTRICT. Account cleanup must explicitly delete
-tokens, sessions and identities in the correct order, plus owned finance data.
+Migration `20261125000000_opaque_sessions` copies each `AuthIdentity` subject onto
+its existing user (same user ID, so linked and Google-only ledgers are kept),
+drops `AuthIdentity`, `AuthChallenge`, `RefreshToken` and the `AuthProvider`
+enum, and deletes all old sessions: every device signs in once more. No finance
+row is changed. Foreign keys use RESTRICT; account deletion, when built, must
+delete sessions and owned finance data explicitly.
 
-The schema allows a user without any login method (for staged creation or disabled
-fixtures). The service must create a user and Google identity atomically, reject
-disabled accounts, and never issue a session without proving a valid method.
-Database fields do not themselves enforce session expiry, revocation, linking
-authorization, or at-least-one-login-method rules.
+The service creates a Google user atomically with its subject, rejects disabled
+accounts, and never issues a session without a valid password or Google proof.
 
-## Password registration and login — Issue #7
+## Password registration and login
 
-- Normalize email by trimming and lowercasing in every registration/login path;
-  use the same normalization for Google account email collisions. Current database
-  email uniqueness is exact-string; service normalization is mandatory.
-- Validate password strength, hash with a maintained adaptive implementation, and
-  rate-limit registration and login. Never store plaintext passwords or log bodies.
-- Null, malformed, disabled-fixture hashes and disabled users fail closed with
-  generic credential errors. Use equivalent failure handling for unknown users.
-- First-party email registration does not assert email ownership: leave
-  `emailVerifiedAt` null until a separate verified challenge proves it. Email
-  verification/recovery flows and their short-lived challenge storage need their
-  own implementation/migration; unverified contact email cannot authorize linking.
+- Normalize email by trimming and lowercasing in every path, including Google
+  email collisions. The `User_normalized_email_key` index closes races.
+- Validate password strength, hash with Argon2id, and rate-limit registration and
+  login per IP and per normalized email. Never store plaintext or log bodies.
+- Null, malformed, disabled-fixture hashes, disabled users and unknown users all
+  fail with the same generic credential error after one Argon2 operation.
+- First-party registration does not assert email ownership; `emailVerifiedAt`
+  stays null.
 
-## Google login and explicit linking — Issues #7, #11, #16
+## Google sign-in
 
-1. The mobile app starts an explicit native Google sign-in flow. Backend-issued,
-   short-lived, single-use challenges bind the result to the initiating login or
-   link attempt; Issue #7 implements challenge storage and nonce consumption.
-2. The backend verifies the ID token with a maintained Google-compatible library:
-   signature/trusted keys, Google issuer, configured audience and authorized
-   presenter where applicable, expiry, subject, and expected nonce. Reject a
-   missing/mismatched/replayed challenge. Never accept a client-supplied user ID.
-3. Resolve the verified `(google, sub)` first. Its owner remains stable even if
-   Google changes the email claim; do not silently replace a user's contact email.
-4. For a new subject with no existing email collision, create the user and identity
-   atomically. Require a usable verified email claim for this MVP onboarding;
-   never use that claim alone to authorize access to an existing account.
-5. If the email matches an existing PocketFinance account, do not create a session
-   for it or silently merge data. Return generic guidance to sign in with an
-   existing method. The linking API requires recent reauthentication and fresh
-   Google proof. A subject already owned by another
-   user cannot be reassigned. Handle uniqueness races without leaking account data.
-6. Successful login issues PocketFinance access/refresh credentials. Google ID
-   tokens are not PocketFinance API bearer tokens. Request only identity scopes,
-   not Gmail, Drive, banking, or financial-record access.
+1. The app calls `POST /v1/auth/google/challenges` and receives a short-lived
+   nonce (`CHALLENGE_TTL_SECONDS`, default 300). The nonce is stateless:
+   `<expiry>.<random>.<HMAC-SHA256>` signed with `ACCESS_TOKEN_SECRET`. It is not
+   stored and **not single-use**; it only proves the ID token was requested for
+   this server within the window.
+2. The native Google SDK embeds that exact nonce in the ID token. The backend
+   rejects a forged or expired nonce before any provider I/O, then verifies the ID
+   token's signature, issuer, configured audience, authorized presenter, expiry,
+   subject and nonce equality. A client-supplied user ID is never accepted.
+3. Resolve `User.googleSubject` first, so the owner stays stable when Google
+   changes the email claim.
+4. For a new subject, require a verified email with no existing account and
+   create the user with its subject atomically.
+5. If the email already belongs to a PocketFinance account, return the generic
+   credential error. Accounts are never merged by email, and Google cannot be
+   added to an existing password account in this version.
+6. Success issues a PocketFinance session token. Google ID tokens are never API
+   bearer tokens; only identity scopes are requested.
 
-For Google-only users, an email/password attempt fails generically. Adding a
-password, recovery, changing providers, and unlinking are deferred; do not show
-nonfunctional controls for them. Explicit linking through the API preserves the
-existing user ID and finance records.
-
-These are application design choices informed by Google's
+These choices follow Google's
 [OpenID Connect verification guidance](https://developers.google.com/identity/openid-connect/openid-connect).
 
-## Persistent sessions and rotation
+## Sessions
 
-Updated native clients request persistent sessions on password login, registration,
-Google login and normal refresh with `X-PocketFinance-Session-Policy: persistent`.
-The response uses `sessionExpiresAt: null` for a persistent session. Access tokens
-still expire after **15 minutes** by default, and every protected request checks
-session ownership, revocation, and user disabled state on the server.
+Login, registration and Google sign-in return `{ accessToken, tokenType: "Bearer" }`.
+`accessToken` is an opaque 43-character random value; only its hash is stored.
+Every protected request hashes the bearer token and loads the session with its
+user in one lookup, rejecting a missing session or disabled user. Responses are
+the same generic 401 for every failure.
 
-Clients using the original credential format keep the configured absolute and
-inactivity limits, which default to **30 days** and **7 days without successful
-refresh**. On the first successful refresh from an updated native client, the API
-checks the family's existing deadlines, consumes its token, and upgrades the
-family in the same transaction. An expired, revoked, or already deleted family
-requires sign-in. The migration leaves existing rows and deadlines in place.
-Apply it and update all API instances before distributing the updated native app.
+`POST /v1/auth/logout` deletes the current session, or all of the user's
+sessions with `{ "allSessions": true }`. Revocation is immediate and nothing is
+left behind, so no cleanup job exists. Raw tokens, authorization headers and
+Google proofs never belong in logs.
 
-During refresh, in one database transaction: verify the session, atomically mark
-an unconsumed token consumed, insert its replacement hash, and update session use.
-A concurrent loser or replay of a consumed token revokes that session/family.
-Commit the revocation before returning an auth error; throwing inside the same
-transaction must not accidentally roll it back. Retain consumed hashes until the
-session is no longer usable. Cleanup removes revoked families, expired bounded
-families, and expired challenges. No raw refresh token, authorization header, or
-Google proof belongs in logs.
+The mobile app stores `{ version: 2, token }` in Expo SecureStore
+(`WHEN_UNLOCKED_THIS_DEVICE_ONLY`) and verifies it with `GET /v1/me` before
+showing authenticated navigation. Any 401 clears the stored token and returns to
+sign-in; requests are never replayed. A network failure, rate limit or server
+outage keeps the token and offers a retry. If the server cannot confirm logout,
+the app still clears local credentials and reports that the server session may
+remain active; a later all-device sign-out removes it. A stored version 1
+(refresh-token) record fails validation and is discarded.
 
-The mobile app stores credentials and the access-token deadline in Expo SecureStore
-and leaves session expiry to the API. It restores and verifies credentials before
-displaying authenticated navigation. API requests share a single
-in-flight refresh operation and retry at most once. Never store credentials in
-AsyncStorage or ordinary persisted state. Logout revokes the server session and
-clears local credentials; Google account sign-out alone is insufficient.
+For native verification on a development build: sign in, close the app, change
+the device clock or wait, reopen and confirm protected screens load with no auth
+request other than `/v1/me`. With two devices, confirm device sign-out revokes
+only its session and all-device sign-out revokes both.
 
-A definitive invalid/revoked response clears the session. A network failure or
-provider/API outage preserves credentials and presents a retry state. A lost
-refresh response is ambiguous: strict rotation may require sign-in again rather
-than blindly replaying the old token. Do not implement an unbounded auto-refresh
-loop. If the server cannot confirm logout, the app clears local credentials and
-reports that the server session may still be active. A later confirmed sign-out
-on all devices revokes any remaining sessions for that account.
+## Why the design was simplified
 
-Rotation/reuse decisions follow [OAuth security best current practice](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14).
+The previous design used 15-minute JWTs plus rotating refresh tokens with replay
+detection, persistent/bounded session policies, a reauthentication window, a
+Google linking flow, single-use challenge rows and a cleanup CLI: five auth
+tables and a large client state machine (single-flight refresh, a durable
+"refresh pending" marker, an ambiguous-renewal state). For a pre-release,
+single-API portfolio app whose requirement is "stay signed in until sign-out",
+that machinery mostly protected against a lifetime the product no longer wanted.
 
-For native verification on a development build, use a disposable local API with
-`ACCESS_TTL_SECONDS=30`, `SESSION_IDLE_SECONDS=45`, and `SESSION_TTL_SECONDS=60`.
-Sign in, close the app, wait past 60 seconds, then reopen and confirm that a
-protected screen loads through silent refresh. Repeat with two devices to verify
-that device sign-out revokes only its session and all-device sign-out revokes both.
-Revoke a new session on the test server and confirm that reopening prompts for sign-in.
+Kept: hashed storage, instant server-side revocation (per device and all devices),
+disabled-account blocking, owner scoping, generic errors and Google verification.
+Given up, deliberately:
+
+- **Stolen token theft detection.** A copied token works until sign-out; there is
+  no rotation to reveal reuse. Mitigation: SecureStore device-only storage, HTTPS,
+  and remote all-device sign-out.
+- **Single-use Google nonces.** A captured ID token could be replayed within the
+  nonce window; it still requires a valid Google signature for this app.
+- **Google linking and reauthentication.** Password users cannot add Google later.
+
+Reconsider rotation or expiry before handling real financial data at scale.
+OAuth background: [RFC 9700 §4.14](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14).
 
 ## Provider setup and mobile builds
 
-Issue #11 selects a maintained native library compatible with the current Expo
-SDK and current Android Credential Manager guidance. Native Google sign-in needs
-an Expo development build/config plugin; it cannot be tested in Expo Go. See
+Native Google sign-in needs an Expo development build/config plugin; it cannot
+be tested in Expo Go. See
 [Expo's Google authentication guide](https://docs.expo.dev/guides/google-authentication/).
-The current bootstrap remains runnable in Expo Go until native auth is added.
 
 Configure a Google project/consent screen with synthetic test users, Android
 package name and signing certificate fingerprints, iOS bundle identifier, and
 the backend/web audience as required by the chosen library. Keep development and
 release client registrations distinct and document their allowed audiences. Public
 OAuth client IDs may be app configuration; client secrets/signing keys may not.
-No Google project, credential, dependency, or live provider call is created by
-this schema task. Browser OAuth fallback, if introduced, uses PKCE, state, exact
-redirect validation and a system browser, never an embedded password webview.
+Browser OAuth fallback, if introduced, uses PKCE, state, exact redirect
+validation and a system browser, never an embedded password webview.
 
 Before iOS distribution, Issue #22 must review Apple's
 [Login Services guideline 4.8](https://developer.apple.com/app-store/review/guidelines/#login-services).
 Google login generally requires an equivalent login option meeting Apple's
 privacy requirements unless an exception applies. Ordinary email/password alone
 does not establish that exception. Plan Sign in with Apple or a documented
-qualifying alternative before submission; this task does not implement Apple.
+qualifying alternative before submission.
 
-## Issue sequence and verification
+## Issue history and verification
 
-| Issue | Updated responsibility |
+| Issue | Responsibility |
 | --- | --- |
-| [#6](https://github.com/ShokooBid/PocketFinance/issues/6) | Schema, additive migration, disabled synthetic seeds, fresh/upgrade database tests. |
+| [#6](https://github.com/ShokooBid/PocketFinance/issues/6) | Original schema, additive migration, disabled synthetic seeds, fresh/upgrade database tests. |
 | #8 | Fastify, validated contracts, redaction, configuration foundation before auth routes. |
-| [#7](https://github.com/ShokooBid/PocketFinance/issues/7) | Password and Google backend login, challenge verification, explicit linking, session issuance/rotation/replay detection/revocation. Depends on #6 and #8. |
-| [#9](https://github.com/ShokooBid/PocketFinance/issues/9) | Authentication/loading navigation placeholders for both methods. |
-| [#11](https://github.com/ShokooBid/PocketFinance/issues/11) | Native Google development build, forms/provider flow, secure session restore, single-flight refresh, bounded retries. |
-| [#16](https://github.com/ShokooBid/PocketFinance/issues/16) | Show linked method state, explicit Google linking, current/all-device logout, accurate privacy statements. |
-| [#20](https://github.com/ShokooBid/PocketFinance/issues/20) | API tests for proofs, linking collisions, rotation races, expiry/revocation and cross-user sessions. |
-| [#21](https://github.com/ShokooBid/PocketFinance/issues/21) | Mobile tests for both methods, cancellation, app restart, offline/invalid sessions and concurrent 401 responses. |
-| [#22](https://github.com/ShokooBid/PocketFinance/issues/22) | Physical-device and iOS login-policy review; no claim of production readiness from schema tests. |
+| [#7](https://github.com/ShokooBid/PocketFinance/issues/7) | Password and Google backend login (originally with rotation and linking). |
+| [#11](https://github.com/ShokooBid/PocketFinance/issues/11) | Native Google development build, forms/provider flow, secure session restore. |
+| [#16](https://github.com/ShokooBid/PocketFinance/issues/16) | Current/all-device logout and accurate privacy statements (linking later removed). |
+| [#20](https://github.com/ShokooBid/PocketFinance/issues/20) / [#21](https://github.com/ShokooBid/PocketFinance/issues/21) | API and mobile auth tests. |
+| [#22](https://github.com/ShokooBid/PocketFinance/issues/22) | Physical-device and iOS login-policy review. |
 
-Schema tests use only synthetic subjects and token hashes; CI never contacts Google
-or needs real credentials. Provider verification is tested with local signed
-fixtures/mocked key retrieval; separate manual development-build tests verify the
-actual Google setup. Future API tests must prove security behavior beyond database
-constraints. The initial finance ownership protections remain required for all
-login methods.
+Tests use only synthetic subjects and token hashes; CI never contacts Google or
+needs real credentials. Provider verification uses local signed fixtures; manual
+development-build tests verify the actual Google setup. Finance ownership
+protections remain required for all login methods.

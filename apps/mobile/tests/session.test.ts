@@ -5,146 +5,14 @@ import { createSessionController } from "../src/auth/session-controller";
 import {
   alice,
   bob,
+  credentials,
   deferred,
   harness,
-  now,
   response,
   stored
 } from "./auth-fixtures";
 
 describe("verified mobile sessions", () => {
-  it("reauthenticates before a fresh link proof and preserves the owner/session", async () => {
-    const h = harness();
-    await h.controller.restore();
-    h.fetcher.mockClear();
-    const challenge = {
-      challengeId: "20000000-0000-4000-8000-000000000001",
-      nonce: "n".repeat(43),
-      expiresAt: "2026-10-26T12:05:00Z"
-    };
-    h.fetcher
-      .mockResolvedValueOnce(response({ ok: true }))
-      .mockResolvedValueOnce(response(challenge))
-      .mockResolvedValueOnce(response({ ok: true }));
-    const before = h.controller.getSnapshot();
-    expect(await h.controller.linkGoogle("synthetic password")).toBe("linked");
-    expect(
-      h.fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)
-    ).toEqual([
-      "/v1/auth/reauthenticate",
-      "/v1/auth/google/challenges",
-      "/v1/auth/google/link"
-    ]);
-    expect(h.proof).toHaveBeenCalledWith(challenge.nonce);
-    expect(JSON.parse(String(h.fetcher.mock.calls[1]?.[1]?.body))).toEqual({
-      purpose: "link"
-    });
-    expect(JSON.parse(String(h.fetcher.mock.calls[2]?.[1]?.body))).toEqual({
-      challengeId: challenge.challengeId,
-      nonce: challenge.nonce,
-      idToken: "synthetic-provider-proof"
-    });
-    expect(h.controller.getSnapshot()).toMatchObject({
-      ...before,
-      user: { ...alice, methods: { password: true, google: true } }
-    });
-    expect(h.disk()).toEqual(stored());
-  });
-  it("does not retry proof 401s, rotate tokens, or destroy a valid session", async () => {
-    for (const failAtLink of [false, true]) {
-      const h = harness();
-      await h.controller.restore();
-      h.fetcher.mockClear();
-      if (failAtLink)
-        h.fetcher
-          .mockResolvedValueOnce(response({ ok: true }))
-          .mockResolvedValueOnce(
-            response({
-              challengeId: "20000000-0000-4000-8000-000000000001",
-              nonce: "n".repeat(43),
-              expiresAt: "2026-10-26T12:05:00Z"
-            })
-          );
-      h.fetcher.mockResolvedValueOnce(response({}, 401));
-      await expect(
-        h.controller.linkGoogle("wrong or rejected proof")
-      ).rejects.toMatchObject({ kind: "invalid" });
-      expect(h.fetcher).toHaveBeenCalledTimes(failAtLink ? 3 : 1);
-      expect(h.store.clear).not.toHaveBeenCalled();
-      expect(h.store.write).not.toHaveBeenCalled();
-      expect(h.controller.getSnapshot()).toMatchObject({
-        status: "authenticated",
-        user: alice
-      });
-    }
-  });
-  it("does not link after provider cancellation or logout while provider UI is pending", async () => {
-    for (const logout of [false, true]) {
-      const h = harness();
-      await h.controller.restore();
-      h.fetcher.mockClear();
-      h.fetcher
-        .mockResolvedValueOnce(response({ ok: true }))
-        .mockResolvedValueOnce(
-          response({
-            challengeId: "20000000-0000-4000-8000-000000000001",
-            nonce: "n".repeat(43),
-            expiresAt: "2026-10-26T12:05:00Z"
-          })
-        );
-      const provider = deferred<string | null>();
-      const started = deferred<void>();
-      h.proof.mockImplementationOnce(() => {
-        started.resolve();
-        return provider.promise;
-      });
-      const link = h.controller.linkGoogle("synthetic password");
-      const cancelled = logout
-        ? expect(link).rejects.toMatchObject({ kind: "cancelled" })
-        : null;
-      await started.promise;
-      if (logout) {
-        h.fetcher.mockResolvedValueOnce(response({ ok: true }));
-        await h.controller.logout();
-      }
-      provider.resolve(logout ? "late-proof" : null);
-      if (cancelled) await cancelled;
-      else expect(await link).toBe("cancelled");
-      expect(
-        h.fetcher.mock.calls.some(([url]) =>
-          String(url).endsWith("/google/link")
-        )
-      ).toBe(false);
-    }
-  });
-  it("carries all-device scope through expired-access logout recovery and reports outages honestly", async () => {
-    for (const offline of [false, true]) {
-      const h = harness();
-      await h.controller.restore();
-      h.fetcher.mockClear();
-      if (offline) h.fetcher.mockRejectedValueOnce(new Error("offline"));
-      else
-        h.fetcher
-          .mockResolvedValueOnce(response({}, 401))
-          .mockResolvedValueOnce(response(stored("replacement").credentials))
-          .mockResolvedValueOnce(response({ ok: true }));
-      await h.controller.logout(true);
-      expect(h.disk()).toBeNull();
-      const calls = h.fetcher.mock.calls.filter(([url]) =>
-        String(url).endsWith("/logout")
-      );
-      for (const [, options] of calls)
-        expect(JSON.parse(String(options?.body))).toEqual({
-          allSessions: true
-        });
-      expect(h.controller.getSnapshot()).toMatchObject({
-        status: "signed-out",
-        notice: expect.stringContaining(
-          offline ? "could not be confirmed" : "Signed out on all devices."
-        )
-      });
-    }
-  });
   it("keeps navigation pending until the stored session is verified", async () => {
     const h = harness();
     const pending = deferred<Response>();
@@ -157,7 +25,25 @@ describe("verified mobile sessions", () => {
       status: "authenticated",
       user: alice
     });
+    expect(h.fetcher.mock.calls[0]?.[1]?.headers).toMatchObject({
+      Authorization: "Bearer synthetic-access"
+    });
     expect(h.store.clear).not.toHaveBeenCalled();
+  });
+  it("restores the same device token after an app restart without renewing it", async () => {
+    const h = harness();
+    await h.controller.restore();
+    const restarted = createSessionController(h.store, h.transport, h.proof);
+    await restarted.restore();
+    expect(restarted.getSnapshot()).toMatchObject({
+      status: "authenticated",
+      user: alice
+    });
+    expect(h.disk()).toEqual(stored());
+    expect(h.store.write).not.toHaveBeenCalled();
+    expect(
+      h.fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)
+    ).toEqual(["/v1/me", "/v1/me"]);
   });
   it("returns to sign-in locally when no credentials are stored", async () => {
     const h = harness(null);
@@ -166,86 +52,24 @@ describe("verified mobile sessions", () => {
     expect(h.fetcher).not.toHaveBeenCalled();
   });
   it("clears stored credentials when the server rejects a restore", async () => {
-    const h = harness(stored("old", true));
+    const h = harness();
     h.fetcher.mockResolvedValueOnce(response({}, 401));
     await h.controller.restore();
-    expect(h.controller.getSnapshot().status).toBe("signed-out");
-    expect(h.disk()).toBeNull();
-    expect(h.fetcher.mock.calls[0]?.[0]).toMatch(/\/auth\/refresh$/);
-  });
-  it("restores persistent credentials after the former idle and absolute deadlines", async () => {
-    for (const days of [7, 30]) {
-      const reopenedAt = now + days * 86_400_000;
-      const replacement = {
-        ...stored("renewed").credentials,
-        accessExpiresAt: new Date(reopenedAt + 900_000).toISOString()
-      };
-      const h = harness(stored(), () => reopenedAt);
-      h.fetcher.mockResolvedValueOnce(
-        response({ ...replacement, sessionExpiresAt: null })
-      );
-
-      await h.controller.restore();
-
-      expect(h.controller.getSnapshot().status).toBe("authenticated");
-      expect(h.disk()?.credentials).toEqual(replacement);
-      expect(h.fetcher.mock.calls[0]?.[1].headers).toMatchObject({
-        "X-PocketFinance-Session-Policy": "persistent"
-      });
-    }
-  });
-  it("refreshes expired access and securely persists the replacement before navigation", async () => {
-    const h = harness(stored("old", true));
-    const replacement = stored("new").credentials;
-    h.fetcher.mockResolvedValueOnce(
-      response({ ...replacement, sessionExpiresAt: "2026-10-27T12:00:00Z" })
-    );
-    await h.controller.restore();
-    expect(h.fetcher).toHaveBeenCalledTimes(2);
-    expect(
-      h.store.write.mock.calls.map(([value]) => value.refreshPending)
-    ).toEqual([true, false]);
-    expect(h.disk()?.credentials).toEqual(replacement);
-    expect(h.controller.getSnapshot().status).toBe("authenticated");
-  });
-  it("shares one refresh for simultaneous and late 401s and retries each request once", async () => {
-    const h = harness();
-    await h.controller.restore();
-    h.fetcher.mockClear();
-    const late = deferred<Response>();
-    let oldCalls = 0;
-    h.fetcher.mockImplementation(async (url, options) => {
-      if (String(url).endsWith("/refresh"))
-        return response(stored("new").credentials);
-      if (
-        (options?.headers as Record<string, string>).Authorization ===
-        "Bearer synthetic-access"
-      ) {
-        if (++oldCalls === 3) return late.promise;
-        return response({}, 401);
-      }
-      return response(alice);
+    expect(h.controller.getSnapshot()).toMatchObject({
+      status: "signed-out",
+      notice: expect.stringContaining("session ended")
     });
-    const client = h.client();
-    const one = client.send("GET", "/v1/me", userSchema);
-    const two = client.send("GET", "/v1/me", userSchema);
-    const three = client.send("GET", "/v1/me", userSchema);
-    await Promise.all([one, two]);
-    late.resolve(response({}, 401));
-    await three;
-    expect(
-      h.fetcher.mock.calls.filter(([url]) => String(url).endsWith("/refresh"))
-    ).toHaveLength(1);
-    expect(h.fetcher).toHaveBeenCalledTimes(7);
+    expect(h.disk()).toBeNull();
+    expect(h.fetcher).toHaveBeenCalledTimes(1);
   });
-  it("clears definitively revoked refresh credentials and rejects old clients", async () => {
+  it("signs out on a revoked token and rejects requests from the old client", async () => {
     const h = harness();
     await h.controller.restore();
     const client = h.client();
     h.fetcher.mockResolvedValue(response({}, 401));
     await expect(
       client.send("GET", "/v1/me", userSchema)
-    ).rejects.toBeDefined();
+    ).rejects.toMatchObject({ kind: "invalid" });
     expect(h.controller.getSnapshot().status).toBe("signed-out");
     expect(h.disk()).toBeNull();
     const calls = h.fetcher.mock.calls.length;
@@ -254,26 +78,17 @@ describe("verified mobile sessions", () => {
     ).rejects.toMatchObject({ kind: "cancelled" });
     expect(h.fetcher).toHaveBeenCalledTimes(calls);
   });
-  it("never retries a second 401 or refreshes twice after proactive renewal", async () => {
-    for (const expired of [false, true]) {
-      const h = harness(stored("old", expired));
-      let refreshes = 0;
-      h.fetcher.mockImplementation(async (url) => {
-        if (String(url).endsWith("/refresh")) {
-          ++refreshes;
-          return response(stored("new").credentials);
-        }
-        return response({}, 401);
-      });
-      await h.controller.restore();
-      expect(h.controller.getSnapshot().status).toBe("signed-out");
-      expect(refreshes).toBe(1);
-      expect(
-        h.fetcher.mock.calls.filter(([url]) => String(url).endsWith("/me"))
-      ).toHaveLength(expired ? 1 : 2);
-    }
+  it("never retries a request after a 401", async () => {
+    const h = harness();
+    await h.controller.restore();
+    h.fetcher.mockClear();
+    h.fetcher.mockResolvedValue(response({}, 401));
+    await expect(
+      h.client().send("POST", "/v1/categories", z.unknown(), { name: "Food" })
+    ).rejects.toBeDefined();
+    expect(h.fetcher).toHaveBeenCalledTimes(1);
   });
-  it("preserves credentials for transient restore failures and permits a read retry", async () => {
+  it("preserves credentials for transient restore failures and permits a retry", async () => {
     const h = harness();
     h.fetcher.mockRejectedValueOnce(new Error("private network diagnostic"));
     await h.controller.restore();
@@ -285,37 +100,21 @@ describe("verified mobile sessions", () => {
     await h.controller.restore();
     expect(h.controller.getSnapshot().status).toBe("authenticated");
   });
-  it("preserves an ambiguous rotation marker across restart without replay", async () => {
-    const h = harness(stored("old", true));
-    h.fetcher.mockRejectedValueOnce(new Error("lost response"));
-    await h.controller.restore();
-    expect(h.disk()?.refreshPending).toBe(true);
-    const restarted = createSessionController(
-      h.store,
-      h.transport,
-      h.proof,
-      () => now
-    );
-    await restarted.restore();
-    expect(restarted.getSnapshot()).toEqual({
-      status: "unavailable",
-      reason: "ambiguous"
-    });
-    expect(h.fetcher).toHaveBeenCalledTimes(1);
-    expect(h.store.clear).not.toHaveBeenCalled();
+  it("keeps credentials on server errors and rate limits during a request", async () => {
+    for (const status of [429, 503]) {
+      const h = harness();
+      await h.controller.restore();
+      h.fetcher.mockResolvedValueOnce(response({}, status));
+      await expect(
+        h.client().send("GET", "/v1/me", userSchema)
+      ).rejects.toBeDefined();
+      expect(h.controller.getSnapshot().status).toBe("authenticated");
+      expect(h.disk()).toEqual(stored());
+    }
   });
-  it("can retry renewal rejected by the server's pre-handler rate limiter", async () => {
-    const h = harness(stored("old", true));
-    h.fetcher.mockResolvedValueOnce(response({}, 429));
-    await h.controller.restore();
-    expect(h.disk()?.refreshPending).toBe(false);
-    h.fetcher.mockResolvedValueOnce(response(stored("new").credentials));
-    await h.controller.restore();
-    expect(h.controller.getSnapshot().status).toBe("authenticated");
-  });
-  it("does not send a refresh if the durable pending marker cannot be saved", async () => {
-    const h = harness(stored("old", true));
-    h.store.write.mockRejectedValueOnce(new Error("locked secure store"));
+  it("reports storage failure when a stored session cannot be read", async () => {
+    const h = harness();
+    h.store.read.mockRejectedValueOnce(new Error("locked secure store"));
     await h.controller.restore();
     expect(h.controller.getSnapshot()).toEqual({
       status: "unavailable",
@@ -342,6 +141,30 @@ describe("verified mobile sessions", () => {
       });
     }
   });
+  it("carries all-device scope to the server and reports an already-revoked token honestly", async () => {
+    for (const outcome of ["ok", "revoked"] as const) {
+      const h = harness();
+      await h.controller.restore();
+      h.fetcher.mockClear();
+      h.fetcher.mockResolvedValueOnce(
+        outcome === "ok" ? response({ ok: true }) : response({}, 401)
+      );
+      await h.controller.logout(true);
+      expect(h.disk()).toBeNull();
+      expect(h.fetcher).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(h.fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+        allSessions: true
+      });
+      expect(h.controller.getSnapshot()).toMatchObject({
+        status: "signed-out",
+        notice: expect.stringContaining(
+          outcome === "ok"
+            ? "Signed out on all devices."
+            : "could not be confirmed"
+        )
+      });
+    }
+  });
   it("discards stale responses after logout and account switch", async () => {
     const h = harness();
     await h.controller.restore();
@@ -356,7 +179,7 @@ describe("verified mobile sessions", () => {
     });
     await h.controller.logout();
     h.fetcher
-      .mockResolvedValueOnce(response(stored("bob").credentials))
+      .mockResolvedValueOnce(response(credentials("bob")))
       .mockResolvedValueOnce(response(bob));
     await h.controller.signIn("login", bob.email, "synthetic password");
     pending.resolve(response(alice));
@@ -365,6 +188,7 @@ describe("verified mobile sessions", () => {
       status: "authenticated",
       user: bob
     });
+    expect(h.disk()).toEqual(stored("bob"));
     await expect(
       oldClient.send("POST", "/v1/categories", z.unknown(), {
         name: "old write"
@@ -385,46 +209,18 @@ describe("verified mobile sessions", () => {
     await h.controller.logout();
     expect(h.disk()).toBeNull();
   });
-
-  it("cannot restore credentials from a refresh that finishes after logout", async () => {
-    const h = harness();
+  it("does not keep a session whose token could not be stored securely", async () => {
+    const h = harness(null);
     await h.controller.restore();
-    const pending = deferred<Response>();
-    const started = deferred<void>();
-    h.fetcher
-      .mockResolvedValueOnce(response({}, 401))
-      .mockImplementationOnce(() => {
-        started.resolve();
-        return pending.promise;
-      });
-    const request = h.client().send("GET", "/v1/me", userSchema);
-    const cancelled = expect(request).rejects.toMatchObject({
-      kind: "cancelled"
-    });
-    await started.promise;
-    h.fetcher.mockResolvedValueOnce(response({ ok: true }));
-    await h.controller.logout();
-    pending.resolve(response(stored("late replacement").credentials));
-    await cancelled;
-    expect(h.disk()).toBeNull();
-    expect(h.controller.getSnapshot().status).toBe("signed-out");
-    expect(h.store.write.mock.calls).toHaveLength(1); // Pending marker only.
-  });
-
-  it("retains the pending marker if a rotated credential cannot be stored", async () => {
-    const h = harness(stored("old", true));
-    const persist = h.store.write.getMockImplementation()!;
-    h.store.write
-      .mockImplementationOnce(persist)
-      .mockRejectedValueOnce(new Error("device locked"));
-    h.fetcher.mockResolvedValueOnce(response(stored("new").credentials));
-    await h.controller.restore();
+    h.store.write.mockRejectedValueOnce(new Error("device locked"));
+    h.fetcher.mockResolvedValueOnce(response(credentials()));
+    await expect(
+      h.controller.signIn("login", alice.email, "synthetic password")
+    ).rejects.toMatchObject({ kind: "storage" });
     expect(h.controller.getSnapshot()).toEqual({
       status: "unavailable",
       reason: "storage"
     });
-    expect(h.disk()?.refreshPending).toBe(true);
-    expect(h.store.clear).not.toHaveBeenCalled();
-    expect(h.fetcher).toHaveBeenCalledTimes(1);
+    expect(h.disk()).toBeNull();
   });
 });

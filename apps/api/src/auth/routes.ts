@@ -2,8 +2,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { ApiError, invalidCredentials } from "../errors.js";
-import { tokenHash } from "./crypto.js";
-import type { AuthService, Principal, SessionPolicy } from "./service.js";
+import { nonceFormat, tokenHash } from "./crypto.js";
+import type { AuthService, Principal } from "./service.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -34,13 +34,6 @@ const errors = {
   500: errorSchema,
   503: errorSchema
 };
-const secret = z.string().min(1).max(16384);
-const nonce = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
-const googleInput = z.strictObject({
-  challengeId: z.uuid(),
-  nonce,
-  idToken: secret
-});
 const password = z
   .string()
   .min(12)
@@ -51,22 +44,17 @@ const loginInput = z.strictObject({
   email,
   password: z.string().min(1).max(128)
 });
+const googleInput = z.strictObject({
+  nonce: z.string().regex(nonceFormat),
+  idToken: z.string().min(1).max(16384)
+});
+// One opaque bearer token per device. It is valid until logout.
 const tokens = z.object({
   accessToken: z.string(),
-  refreshToken: z.string(),
-  tokenType: z.literal("Bearer"),
-  accessExpiresAt: z.iso.datetime(),
-  sessionExpiresAt: z.iso.datetime().nullable()
+  tokenType: z.literal("Bearer")
 });
-// Credential format opt-in. This header does not authenticate the device.
-const sessionPolicyHeader = "x-pocketfinance-session-policy";
-const sessionPolicy = (request: FastifyRequest): SessionPolicy =>
-  request.headers[sessionPolicyHeader] === "persistent"
-    ? "persistent"
-    : "bounded";
 const ok = z.object({ ok: z.literal(true) });
 const challengeResponse = z.object({
-  challengeId: z.uuid(),
   nonce: z.string(),
   expiresAt: z.iso.datetime()
 });
@@ -78,23 +66,22 @@ export function registerAuthRoutes(
   const app = instance.withTypeProvider<ZodTypeProvider>();
   app.decorateRequest("principal", null);
   app.decorate("authenticate", async (request: FastifyRequest) => {
-    const match = /^Bearer ([A-Za-z0-9_.-]+)$/.exec(
+    const match = /^Bearer ([A-Za-z0-9_-]+)$/.exec(
       request.headers.authorization ?? ""
     );
     if (!match?.[1]) throw invalidCredentials();
     request.principal = await auth.authenticate(match[1]);
   });
 
-  // Bounded process-local account limiter supplements the global IP limiter.
+  // Bounded process-local per-email limiter supplements the global IP limiter.
   const attempts = new Map<string, { count: number; until: number }>();
   const accountLimit = async (request: FastifyRequest) => {
     const body = request.body as { email?: string } | undefined;
-    const identity = body?.email ?? request.principal?.userId;
-    if (!identity) return;
+    if (!body?.email) return;
     const now = Date.now();
     for (const [key, value] of attempts)
       if (value.until <= now) attempts.delete(key);
-    const key = tokenHash(identity);
+    const key = tokenHash(body.email);
     const record = attempts.get(key) ?? { count: 0, until: now + 900_000 };
     if (++record.count > 10 || (!attempts.has(key) && attempts.size >= 10000))
       throw new ApiError(
@@ -106,22 +93,13 @@ export function registerAuthRoutes(
   };
   const schema = { tags: ["Authentication"], response: errors };
   const secured = { ...schema, security: [{ bearerAuth: [] }] };
-  const credentialRequest = {
-    ...schema,
-    headers: z.looseObject({
-      [sessionPolicyHeader]: z
-        .string()
-        .optional()
-        .describe('Send "persistent" to opt in to a null sessionExpiresAt.')
-    })
-  };
 
   app.post(
     "/v1/auth/register",
     {
       preHandler: accountLimit,
       schema: {
-        ...credentialRequest,
+        ...schema,
         body: z.strictObject({ email, password }),
         response: { ...errors, 201: tokens }
       }
@@ -129,109 +107,40 @@ export function registerAuthRoutes(
     async (request, reply) =>
       reply
         .code(201)
-        .send(
-          await auth.register(
-            request.body.email,
-            request.body.password,
-            sessionPolicy(request)
-          )
-        )
+        .send(await auth.register(request.body.email, request.body.password))
   );
   app.post(
     "/v1/auth/login",
     {
       preHandler: accountLimit,
       schema: {
-        ...credentialRequest,
+        ...schema,
         body: loginInput,
         response: { ...errors, 200: tokens }
       }
     },
-    async (request) =>
-      auth.login(
-        request.body.email,
-        request.body.password,
-        sessionPolicy(request)
-      )
-  );
-  app.post(
-    "/v1/auth/refresh",
-    {
-      schema: {
-        ...credentialRequest,
-        body: z.strictObject({ refreshToken: nonce }),
-        response: { ...errors, 200: tokens }
-      }
-    },
-    async (request) =>
-      auth.refresh(request.body.refreshToken, sessionPolicy(request))
+    async (request) => auth.login(request.body.email, request.body.password)
   );
   app.post(
     "/v1/auth/google/challenges",
     {
       schema: {
         ...schema,
-        body: z.strictObject({
-          purpose: z.enum(["login", "link", "reauthenticate"])
-        }),
         response: { ...errors, 201: challengeResponse }
       }
     },
-    async (request, reply) => {
-      if (request.body.purpose !== "login") await app.authenticate(request);
-      return reply
-        .code(201)
-        .send(
-          await auth.challenge(
-            request.body.purpose,
-            request.principal ?? undefined
-          )
-        );
-    }
+    async (_request, reply) => reply.code(201).send(auth.challenge())
   );
   app.post(
     "/v1/auth/google",
     {
       schema: {
-        ...credentialRequest,
+        ...schema,
         body: googleInput,
         response: { ...errors, 200: tokens }
       }
     },
-    async (request) => auth.googleLogin(request.body, sessionPolicy(request))
-  );
-  app.post(
-    "/v1/auth/google/link",
-    {
-      preHandler: [app.authenticate, accountLimit],
-      schema: {
-        ...secured,
-        body: googleInput,
-        response: { ...errors, 200: ok }
-      }
-    },
-    async (request) => {
-      await auth.link(request.principal!, request.body);
-      return { ok: true as const };
-    }
-  );
-  app.post(
-    "/v1/auth/reauthenticate",
-    {
-      preHandler: [app.authenticate, accountLimit],
-      schema: {
-        ...secured,
-        body: z.union([
-          z.strictObject({ password: z.string().min(1).max(128) }),
-          googleInput
-        ]),
-        response: { ...errors, 200: ok }
-      }
-    },
-    async (request) => {
-      await auth.reauthenticate(request.principal!, request.body);
-      return { ok: true as const };
-    }
+    async (request) => auth.googleLogin(request.body)
   );
   app.post(
     "/v1/auth/logout",
